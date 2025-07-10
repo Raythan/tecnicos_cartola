@@ -965,9 +965,10 @@
                     <th class="p-3 font-semibold sortable" onclick="handleSort('${viewKey}', 'name')">Nome ${getSortIcon(viewKey, 'name')}</th>
                     <th class="p-3 font-semibold sortable" onclick="handleSort('${viewKey}', 'position')">Pos. ${getSortIcon(viewKey, 'position')}</th>
                     <th class="p-3 font-semibold text-center sortable" onclick="handleSort('${viewKey}', 'skill')">Habil. ${getSortIcon(viewKey, 'skill')}</th>
+                    <th class="p-3 font-semibold text-right sortable" onclick="handleSort('${viewKey}', 'salary')">Salário ${getSortIcon(viewKey, 'salary')}</th>
                     <th class="p-3 font-semibold text-right sortable" onclick="handleSort('${viewKey}', 'value')">Valor ${getSortIcon(viewKey, 'value')}</th>
                     <th class="p-3 font-semibold text-center">Ação</th>
-                </tr></thead><tbody>${availablePlayers.map(p => { const canAfford = playerTeam.cash >= p.value; return `<tr class="border-b hover:bg-gray-50"><td class="p-3 font-medium">${p.name}</td><td class="p-3">${p.position}</td><td class="p-3 text-center font-bold text-blue-600">${p.skill}</td><td class="p-3 text-right">R$ ${p.value.toLocaleString('pt-BR')}</td><td class="p-3 text-center"><button ${canAfford ? '' : 'disabled'} onclick="buyPlayer('${p.id}')" class="px-3 py-1 bg-green-500 text-white text-xs font-bold rounded hover:bg-green-600 transition disabled:opacity-50 disabled:cursor-not-allowed">Comprar</button></td></tr>` }).join('')}</tbody>`;
+                </tr></thead><tbody>${availablePlayers.map(p => { const canAfford = playerTeam.cash >= p.value; return `<tr class="border-b hover:bg-gray-50"><td class="p-3 font-medium">${p.name}</td><td class="p-3">${p.position}</td><td class="p-3 text-center font-bold text-blue-600">${p.skill}</td><td class="p-3 text-right">R$ ${p.salary.toLocaleString('pt-BR')}</td><td class="p-3 text-right">R$ ${p.value.toLocaleString('pt-BR')}</td><td class="p-3 text-center"><button ${canAfford ? '' : 'disabled'} onclick="buyPlayer('${p.id}')" class="px-3 py-1 bg-green-500 text-white text-xs font-bold rounded hover:bg-green-600 transition disabled:opacity-50 disabled:cursor-not-allowed">Comprar</button></td></tr>` }).join('')}</tbody>`;
             } else {
                 const viewKey = 'transfers-sell';
                 const { key, order } = gameState.sorting[viewKey];
@@ -976,9 +977,10 @@
                     <th class="p-3 font-semibold sortable" onclick="handleSort('${viewKey}', 'name')">Nome ${getSortIcon(viewKey, 'name')}</th>
                     <th class="p-3 font-semibold sortable" onclick="handleSort('${viewKey}', 'position')">Pos. ${getSortIcon(viewKey, 'position')}</th>
                     <th class="p-3 font-semibold text-center sortable" onclick="handleSort('${viewKey}', 'skill')">Habil. ${getSortIcon(viewKey, 'skill')}</th>
+                    <th class="p-3 font-semibold text-right sortable" onclick="handleSort('${viewKey}', 'salary')">Salário ${getSortIcon(viewKey, 'salary')}</th>
                     <th class="p-3 font-semibold text-right sortable" onclick="handleSort('${viewKey}', 'value')">Valor ${getSortIcon(viewKey, 'value')}</th>
                     <th class="p-3 font-semibold text-center">Ação</th>
-                </tr></thead><tbody>${sortedPlayers.map(p => `<tr class="border-b hover:bg-gray-50"><td class="p-3 font-medium">${p.name}</td><td class="p-3">${p.position}</td><td class="p-3 text-center font-bold text-blue-600">${p.skill}</td><td class="p-3 text-right">R$ ${p.value.toLocaleString('pt-BR')}</td><td class="p-3 text-center"><button onclick="sellPlayer('${p.id}')" class="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded hover:bg-red-600 transition">Vender</button></td></tr>`).join('')}</tbody>`;
+                </tr></thead><tbody>${sortedPlayers.map(p => `<tr class="border-b hover:bg-gray-50"><td class="p-3 font-medium">${p.name}</td><td class="p-3">${p.position}</td><td class="p-3 text-center font-bold text-blue-600">${p.skill}</td><td class="p-3 text-right">R$ ${p.salary.toLocaleString('pt-BR')}</td><td class="p-3 text-right">R$ ${p.value.toLocaleString('pt-BR')}</td><td class="p-3 text-center"><button onclick="sellPlayer('${p.id}')" class="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded hover:bg-red-600 transition">Vender</button></td></tr>`).join('')}</tbody>`;
             }
             const container = document.createElement('div');
             container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
