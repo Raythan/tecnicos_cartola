@@ -104,6 +104,12 @@
             color: white;
             border: 1px solid white;
         }
+        .sortable {
+            cursor: pointer;
+        }
+        .sortable:hover {
+            background-color: rgba(0,0,0,0.1);
+        }
 
     </style>
 </head>
@@ -143,19 +149,31 @@
         const LAST_NAMES = ["Silva", "Santos", "Oliveira", "Souza", "Lima", "Pereira", "Ferreira", "Costa", "Rodrigues", "Almeida", "Nascimento", "Gomes", "Martins", "Araújo", "Melo"];
         const MIN_SQUAD_SIZE = 18;
         const MIN_GOALKEEPERS = 2;
+        const PRIZE_MONEY = { WIN: 50000, DRAW: 15000 };
 
         // --- GAME STATE ---
         const gameState = {
             playerTeamId: null,
             teams: [],
             leagueTable: [],
+            playerStats: [],
+            managerHistory: [],
             fixtures: [],
+            currentSeason: 1,
             currentRound: 1,
             lastRoundResults: [],
             view: 'team-selection',
             transferMarket: { activeTab: 'buy' },
+            statsView: { activeTab: 'scorers'},
             dragAndDrop: { draggedPlayerId: null },
-            endOfSeasonReport: { improved: [], declined: [], retired: [] }
+            endOfSeasonReport: { improved: [], declined: [], retired: [], prize: 0 },
+            sorting: {
+                league: { key: 'points', order: 'desc' },
+                finances: { key: 'salary', order: 'desc' },
+                'transfers-buy': { key: 'skill', order: 'desc' },
+                'transfers-sell': { key: 'value', order: 'desc' },
+                scorers: { key: 'goals', order: 'desc' }
+            }
         };
 
         // --- CORE LOGIC ---
@@ -163,7 +181,10 @@
 
         function generatePlayer(teamId, position) {
             const name = `${FIRST_NAMES[getRandomInt(0, FIRST_NAMES.length - 1)]} ${LAST_NAMES[getRandomInt(0, LAST_NAMES.length - 1)]}`;
-            return { id: crypto.randomUUID(), name, age: getRandomInt(18, 34), position, skill: getRandomInt(40, 85), strength: getRandomInt(40, 85), value: getRandomInt(100, 5000) * 1000, teamId, injuryTurns: 0, isSuspended: false };
+            const skill = getRandomInt(40, 85);
+            const player = { id: crypto.randomUUID(), name, age: getRandomInt(18, 34), position, skill, strength: getRandomInt(40, 85), value: getRandomInt(100, 5000) * 1000, teamId, injuryTurns: 0, isSuspended: false, salary: Math.floor(skill * 1000 + getRandomInt(500, 2000)) };
+            gameState.playerStats.push({ playerId: player.id, name: player.name, teamName: TEAM_NAMES[teamId], goals: 0 });
+            return player;
         }
 
         function generateTeam(id, name) {
@@ -172,7 +193,7 @@
             for (let i = 0; i < 8; i++) players.push(generatePlayer(id, POSITIONS.DEFENDER));
             for (let i = 0; i < 8; i++) players.push(generatePlayer(id, POSITIONS.MIDFIELDER));
             for (let i = 0; i < 6; i++) players.push(generatePlayer(id, POSITIONS.ATTACKER));
-            const team = { id, name, players, cash: getRandomInt(1, 10) * 1000000, tactic: '4-4-2', startingXI: [], reserves: [] };
+            const team = { id, name, players, cash: getRandomInt(5, 15) * 1000000, tactic: '4-4-2', startingXI: [], reserves: [], seasonIncome: 0 };
             setInitialLineup(team);
             return team;
         }
@@ -254,6 +275,20 @@
             return { attack: attack || 50, defense: defense || 50 };
         }
 
+        function assignGoals(team, goals) {
+            const attackers = team.players.filter(p => team.startingXI.includes(p.id) && p.position === POSITIONS.ATTACKER);
+            const midfielders = team.players.filter(p => team.startingXI.includes(p.id) && p.position === POSITIONS.MIDFIELDER);
+            const potentialScorers = [...attackers, ...midfielders, ...team.players.filter(p => team.startingXI.includes(p.id))];
+
+            if (potentialScorers.length === 0) return;
+
+            for(let i=0; i<goals; i++) {
+                const scorer = potentialScorers[Math.floor(Math.random() * potentialScorers.length)];
+                const stat = gameState.playerStats.find(ps => ps.playerId === scorer.id);
+                if (stat) stat.goals++;
+            }
+        }
+
         function simulateMatch(match) {
             const homeTeam = gameState.teams.find(t => t.id === match.homeTeamId);
             const awayTeam = gameState.teams.find(t => t.id === match.awayTeamId);
@@ -264,17 +299,20 @@
             const awayGoalChance = (awayStrength.attack / homeStrength.defense);
             const homeGoals = Math.floor(Math.random() * (homeGoalChance * 2.5));
             const awayGoals = Math.floor(Math.random() * (awayGoalChance * 2.5));
+
+            assignGoals(homeTeam, homeGoals);
+            assignGoals(awayTeam, awayGoals);
             
             const matchEvents = { injuries: [], suspensions: [] };
             const playersInMatch = [...homeTeam.players.filter(p => homeTeam.startingXI.includes(p.id)), ...awayTeam.players.filter(p => awayTeam.startingXI.includes(p.id))];
 
             playersInMatch.forEach(player => {
-                if (player.injuryTurns > 0 || player.isSuspended) return; // Already unavailable
-                if (Math.random() < 0.015) { // 1.5% chance of injury
+                if (player.injuryTurns > 0 || player.isSuspended) return;
+                if (Math.random() < 0.015) {
                     player.injuryTurns = getRandomInt(1, 4);
                     matchEvents.injuries.push({ name: player.name, teamId: player.teamId, turns: player.injuryTurns });
                 }
-                if (Math.random() < 0.02) { // 2% chance of red card
+                if (Math.random() < 0.02) {
                     player.isSuspended = true;
                     matchEvents.suspensions.push({ name: player.name, teamId: player.teamId });
                 }
@@ -284,36 +322,65 @@
         }
         
         function updateTableWithResult(result) {
+            const homeTeam = gameState.teams.find(t => t.id === result.homeTeamId);
+            const awayTeam = gameState.teams.find(t => t.id === result.awayTeamId);
             const homeStats = gameState.leagueTable.find(e => e.teamId === result.homeTeamId);
             const awayStats = gameState.leagueTable.find(e => e.teamId === result.awayTeamId);
+            
             homeStats.played++; awayStats.played++;
             homeStats.goalsFor += result.homeGoals; awayStats.goalsFor += result.awayGoals;
             homeStats.goalsAgainst += result.awayGoals; awayStats.goalsAgainst += result.homeGoals;
             homeStats.goalDifference = homeStats.goalsFor - homeStats.goalsAgainst;
             awayStats.goalDifference = awayStats.goalsFor - awayStats.goalsAgainst;
-            if (result.homeGoals > result.awayGoals) { homeStats.wins++; homeStats.points += 3; awayStats.losses++; } 
-            else if (result.awayGoals > result.homeGoals) { awayStats.wins++; awayStats.points += 3; homeStats.losses++; }
-            else { homeStats.draws++; awayStats.draws++; homeStats.points++; awayStats.points++; }
+            
+            if (result.homeGoals > result.awayGoals) {
+                homeStats.wins++; homeStats.points += 3; awayStats.losses++;
+                homeTeam.cash += PRIZE_MONEY.WIN;
+                homeTeam.seasonIncome += PRIZE_MONEY.WIN;
+            } else if (result.awayGoals > result.homeGoals) {
+                awayStats.wins++; awayStats.points += 3; homeStats.losses++;
+                awayTeam.cash += PRIZE_MONEY.WIN;
+                awayTeam.seasonIncome += PRIZE_MONEY.WIN;
+            } else {
+                homeStats.draws++; awayStats.draws++; homeStats.points++; awayStats.points++;
+                homeTeam.cash += PRIZE_MONEY.DRAW;
+                awayTeam.cash += PRIZE_MONEY.DRAW;
+                homeTeam.seasonIncome += PRIZE_MONEY.DRAW;
+                awayTeam.seasonIncome += PRIZE_MONEY.DRAW;
+            }
+        }
+
+        function processMonthlyFinances() {
+            let message = "Despesas mensais com salários foram pagas.";
+            let playerTeamLostMoney = false;
+            gameState.teams.forEach(team => {
+                const totalSalary = team.players.reduce((sum, p) => sum + p.salary, 0);
+                team.cash -= totalSalary;
+                if (team.id === gameState.playerTeamId && team.cash < 0) {
+                    playerTeamLostMoney = true;
+                }
+            });
+            if (playerTeamLostMoney) {
+                message += " Atenção: seu caixa está negativo!";
+                showNotification(message, "error");
+            } else {
+                showNotification(message, "info");
+            }
         }
 
         function processPostRoundUpdates() {
             gameState.teams.forEach(team => {
                 team.players.forEach(player => {
-                    if (player.isSuspended) {
-                        player.isSuspended = false; // Suspension is cleared after the round is processed
-                    }
-                    if (player.injuryTurns > 0) {
-                        player.injuryTurns--;
-                    }
+                    if (player.isSuspended) player.isSuspended = false;
+                    if (player.injuryTurns > 0) player.injuryTurns--;
                 });
-                setInitialLineup(team); // Re-evaluate lineup after updates
+                setInitialLineup(team);
             });
         }
 
         function simulateRound() {
             if (gameState.currentRound > gameState.fixtures.length) { return; }
             
-            // Process updates from *before* this round (e.g., players recovering)
             processPostRoundUpdates();
 
             const isLastRound = gameState.currentRound === gameState.fixtures.length;
@@ -323,6 +390,10 @@
             results.forEach(result => updateTableWithResult(result));
             gameState.lastRoundResults = results;
             
+            if (gameState.currentRound % 4 === 0 && !isLastRound) {
+                processMonthlyFinances();
+            }
+
             if (isLastRound) {
                 handleEndOfSeason();
                 changeView('end-of-season');
@@ -333,7 +404,25 @@
         }
         
         function handleEndOfSeason() {
-            const report = { improved: [], declined: [], retired: [] };
+            const report = { improved: [], declined: [], retired: [], prize: 0 };
+            
+            const sortedTable = [...gameState.leagueTable].sort((a, b) => b.points - a.points || (b.goalDifference - a.goalDifference));
+            sortedTable.forEach((entry, index) => {
+                const team = gameState.teams.find(t => t.id === entry.teamId);
+                const prize = Math.max(0, (20 - index) * 500000);
+                team.cash += prize;
+                if (team.id === gameState.playerTeamId) {
+                    report.prize = prize;
+                    const playerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
+                    gameState.managerHistory.push({
+                        season: gameState.currentSeason,
+                        teamName: playerTeam.name,
+                        position: index + 1,
+                        champion: index === 0
+                    });
+                }
+            });
+
             gameState.teams.forEach(team => {
                 const retiredPlayers = [];
                 team.players.forEach(player => {
@@ -353,17 +442,22 @@
                     }
                 });
                 team.players = team.players.filter(p => !retiredPlayers.includes(p.id));
+                gameState.playerStats = gameState.playerStats.filter(ps => !retiredPlayers.includes(ps.playerId));
+
                 while (team.players.length < MIN_SQUAD_SIZE) {
                     const pos = [POSITIONS.DEFENDER, POSITIONS.MIDFIELDER, POSITIONS.ATTACKER][getRandomInt(0, 2)];
                     team.players.push(generatePlayer(team.id, pos));
                 }
+                team.seasonIncome = 0;
             });
             gameState.endOfSeasonReport = report;
         }
 
         function startNewSeason() {
+            gameState.currentSeason++;
             gameState.currentRound = 1;
             gameState.lastRoundResults = [];
+            gameState.playerStats.forEach(ps => ps.goals = 0);
             createLeagueTable();
             generateFixtures();
             gameState.teams.forEach(setInitialLineup);
@@ -384,6 +478,10 @@
                 sellerTeam.players = sellerTeam.players.filter(p => p.id !== playerId);
                 playerToBuy.teamId = buyerTeam.id;
                 buyerTeam.players.push(playerToBuy);
+                
+                const playerStat = gameState.playerStats.find(ps => ps.playerId === playerId);
+                if(playerStat) playerStat.teamName = buyerTeam.name;
+
                 setInitialLineup(buyerTeam);
                 showNotification(`Jogador ${playerToBuy.name} comprado com sucesso!`, 'success');
                 render();
@@ -407,6 +505,10 @@
                 sellerTeam.players = sellerTeam.players.filter(p => p.id !== playerId);
                 playerToSell.teamId = buyerTeam.id;
                 buyerTeam.players.push(playerToSell);
+
+                const playerStat = gameState.playerStats.find(ps => ps.playerId === playerId);
+                if(playerStat) playerStat.teamName = buyerTeam.name;
+
                 setInitialLineup(sellerTeam);
                 showNotification(`Jogador ${playerToSell.name} vendido para ${buyerTeam.name}!`, 'success');
                 render();
@@ -445,9 +547,43 @@
             }
             render();
         }
+        
+        function handleSort(viewKey, sortKey) {
+            const currentSort = gameState.sorting[viewKey];
+            if (currentSort.key === sortKey) {
+                currentSort.order = currentSort.order === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.key = sortKey;
+                currentSort.order = 'desc';
+            }
+            render();
+        }
+
+        function getSortIcon(viewKey, sortKey) {
+            const currentSort = gameState.sorting[viewKey];
+            if (currentSort.key === sortKey) {
+                return currentSort.order === 'asc' ? '▲' : '▼';
+            }
+            return '';
+        }
+
+        function sortData(data, key, order) {
+            return [...data].sort((a, b) => {
+                const valA = a[key];
+                const valB = b[key];
+
+                if (typeof valA === 'string') {
+                    return order === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                } else {
+                    return order === 'asc' ? valA - valB : valB - valA;
+                }
+            });
+        }
 
         function initGame() {
-            for (let i = 0; i < TEAM_NAMES.length; i++) gameState.teams.push(generateTeam(i, TEAM_NAMES[i]));
+            for (let i = 0; i < TEAM_NAMES.length; i++) {
+                gameState.teams.push(generateTeam(i, TEAM_NAMES[i]));
+            }
             createLeagueTable();
             generateFixtures();
             render();
@@ -462,6 +598,7 @@
             if (gameState.playerTeamId === null && newView !== 'team-selection') return;
             gameState.view = newView;
             if (newView === 'transfers' && options.tab) { gameState.transferMarket.activeTab = options.tab; }
+            if (newView === 'statistics' && options.tab) { gameState.statsView.activeTab = options.tab; }
             render();
         }
 
@@ -518,6 +655,8 @@
                 case 'round-results': renderRoundResults(); break;
                 case 'transfers': renderTransfers(); break;
                 case 'end-of-season': renderEndOfSeason(); break;
+                case 'finances': renderFinances(); break;
+                case 'statistics': renderStatistics(); break;
                 default: renderTeamSelection();
             }
             if (gameState.playerTeamId !== null) {
@@ -552,10 +691,12 @@
             container.innerHTML = `
                 <h2 class="text-2xl font-bold mb-4">Painel Principal</h2>
                 <p>Bem-vindo, técnico! O que você gostaria de fazer?</p>
-                <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 text-white">
-                    <button onclick="changeView('tactics')" class="p-4 bg-blue-500 rounded-lg font-semibold hover:bg-blue-600 transition shadow">Ver Elenco/Táticas</button>
-                    <button onclick="changeView('league')" class="p-4 bg-green-500 rounded-lg font-semibold hover:bg-green-600 transition shadow">Tabela do Campeonato</button>
+                <div class="mt-6 grid grid-cols-2 lg:grid-cols-5 gap-4 text-white">
+                    <button onclick="changeView('tactics')" class="p-4 bg-blue-500 rounded-lg font-semibold hover:bg-blue-600 transition shadow">Elenco/Táticas</button>
+                    <button onclick="changeView('league')" class="p-4 bg-green-500 rounded-lg font-semibold hover:bg-green-600 transition shadow">Campeonato</button>
                     <button onclick="changeView('transfers')" class="p-4 bg-yellow-500 rounded-lg font-semibold hover:bg-yellow-600 transition shadow">Mercado</button>
+                    <button onclick="changeView('finances')" class="p-4 bg-indigo-500 rounded-lg font-semibold hover:bg-indigo-600 transition shadow">Finanças</button>
+                    <button onclick="changeView('statistics')" class="p-4 bg-purple-500 rounded-lg font-semibold hover:bg-purple-600 transition shadow">Estatísticas</button>
                 </div>
                 <div class="mt-8 p-4 bg-gray-50 rounded-lg border">
                     <h3 class="font-bold text-lg mb-2 text-center">Próxima Partida (Rodada ${isEndOfSeason ? gameState.fixtures.length : gameState.currentRound})</h3>
@@ -626,15 +767,23 @@
         }
         
         function renderLeagueTable() {
-            const sortedTable = [...gameState.leagueTable].sort((a, b) => {
-                if (b.points !== a.points) return b.points - a.points;
-                if (b.goalDifference !== a.goalDifference) return b.goalDifference - a.goalDifference;
-                if (b.goalsFor !== a.goalsFor) return b.goalsFor - a.goalsFor;
-                return a.teamName.localeCompare(b.teamName);
-            });
+            const { key, order } = gameState.sorting.league;
+            const sortedTable = sortData(gameState.leagueTable, key, order);
+
             const container = document.createElement('div');
             container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
-            container.innerHTML = `<div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4"><h2 class="text-2xl font-bold">Tabela do Campeonato</h2><button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button></div><div class="overflow-x-auto table-responsive rounded-lg border"><table class="min-w-full bg-white text-sm text-left"><thead class="bg-gray-200"><tr><th class="p-3 font-semibold text-center">#</th><th class="p-3 font-semibold">Time</th><th class="p-3 font-semibold text-center" title="Pontos">P</th><th class="p-3 font-semibold text-center" title="Jogos">J</th><th class="p-3 font-semibold text-center" title="Vitórias">V</th><th class="p-3 font-semibold text-center" title="Empates">E</th><th class="p-3 font-semibold text-center" title="Derrotas">D</th><th class="p-3 font-semibold text-center" title="Gols Pró">GP</th><th class="p-3 font-semibold text-center" title="Gols Contra">GC</th><th class="p-3 font-semibold text-center" title="Saldo de Gols">SG</th></tr></thead><tbody>${sortedTable.map((entry, index) => `<tr class="border-b ${entry.teamId === gameState.playerTeamId ? 'bg-blue-100 font-bold' : 'hover:bg-gray-50'}"><td class="p-3 text-center">${index + 1}</td><td class="p-3">${entry.teamName}</td><td class="p-3 text-center font-bold">${entry.points}</td><td class="p-3 text-center">${entry.played}</td><td class="p-3 text-center text-green-600">${entry.wins}</td><td class="p-3 text-center text-gray-500">${entry.draws}</td><td class="p-3 text-center text-red-600">${entry.losses}</td><td class="p-3 text-center">${entry.goalsFor}</td><td class="p-3 text-center">${entry.goalsAgainst}</td><td class="p-3 text-center">${entry.goalDifference}</td></tr>`).join('')}</tbody></table></div>`;
+            container.innerHTML = `<div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4"><h2 class="text-2xl font-bold">Tabela do Campeonato</h2><button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button></div><div class="overflow-x-auto table-responsive rounded-lg border"><table class="min-w-full bg-white text-sm text-left"><thead class="bg-gray-200"><tr>
+                <th class="p-3 font-semibold text-center sortable" onclick="handleSort('league', 'position')"># ${getSortIcon('league', 'position')}</th>
+                <th class="p-3 font-semibold sortable" onclick="handleSort('league', 'teamName')">Time ${getSortIcon('league', 'teamName')}</th>
+                <th class="p-3 font-semibold text-center sortable" onclick="handleSort('league', 'points')" title="Pontos">P ${getSortIcon('league', 'points')}</th>
+                <th class="p-3 font-semibold text-center sortable" onclick="handleSort('league', 'played')" title="Jogos">J ${getSortIcon('league', 'played')}</th>
+                <th class="p-3 font-semibold text-center sortable" onclick="handleSort('league', 'wins')" title="Vitórias">V ${getSortIcon('league', 'wins')}</th>
+                <th class="p-3 font-semibold text-center sortable" onclick="handleSort('league', 'draws')" title="Empates">E ${getSortIcon('league', 'draws')}</th>
+                <th class="p-3 font-semibold text-center sortable" onclick="handleSort('league', 'losses')" title="Derrotas">D ${getSortIcon('league', 'losses')}</th>
+                <th class="p-3 font-semibold text-center sortable" onclick="handleSort('league', 'goalsFor')" title="Gols Pró">GP ${getSortIcon('league', 'goalsFor')}</th>
+                <th class="p-3 font-semibold text-center sortable" onclick="handleSort('league', 'goalsAgainst')" title="Gols Contra">GC ${getSortIcon('league', 'goalsAgainst')}</th>
+                <th class="p-3 font-semibold text-center sortable" onclick="handleSort('league', 'goalDifference')" title="Saldo de Gols">SG ${getSortIcon('league', 'goalDifference')}</th>
+            </tr></thead><tbody>${sortedTable.map((entry, index) => `<tr class="border-b hover:bg-gray-50 ${entry.teamId === gameState.playerTeamId ? 'bg-blue-100 font-bold' : ''}"><td class="p-3 text-center">${index + 1}</td><td class="p-3">${entry.teamName}</td><td class="p-3 text-center font-bold">${entry.points}</td><td class="p-3 text-center">${entry.played}</td><td class="p-3 text-center text-green-600">${entry.wins}</td><td class="p-3 text-center text-gray-500">${entry.draws}</td><td class="p-3 text-center text-red-600">${entry.losses}</td><td class="p-3 text-center">${entry.goalsFor}</td><td class="p-3 text-center">${entry.goalsAgainst}</td><td class="p-3 text-center">${entry.goalDifference}</td></tr>`).join('')}</tbody></table></div>`;
             mainContent.appendChild(container);
         }
 
@@ -665,28 +814,171 @@
         }
 
         function renderEndOfSeason() {
-            const { improved, declined, retired } = gameState.endOfSeasonReport;
+            const { improved, declined, retired, prize } = gameState.endOfSeasonReport;
             const renderList = (title, players, color) => {
                 if (players.length === 0) return '';
                 return `<div><h3 class="text-lg font-bold mb-2 text-${color}-600">${title}</h3><ul class="list-disc list-inside space-y-1">${players.map(p => `<li>${p.name} ${p.age ? `(Idade: ${p.age})` : ''} <span class="font-bold">${p.change || ''}</span></li>`).join('')}</ul></div>`;
             };
             const container = document.createElement('div');
             container.className = "bg-white shadow-md rounded-lg p-6";
-            container.innerHTML = `<h2 class="text-2xl font-bold mb-4 text-center">Resumo da Temporada</h2><div class="space-y-6">${renderList('Jogadores que Evoluíram', improved, 'green')}${renderList('Jogadores que Regrediram', declined, 'yellow')}${renderList('Jogadores Aposentados', retired, 'red')}${improved.length === 0 && declined.length === 0 && retired.length === 0 ? '<p class="text-center text-gray-500">Nenhuma mudança significativa no seu elenco nesta temporada.</p>' : ''}</div><button onclick="startNewSeason()" class="w-full mt-8 p-3 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 transition shadow">Iniciar Nova Temporada</button>`;
+            container.innerHTML = `
+                <h2 class="text-2xl font-bold mb-4 text-center">Resumo da Temporada ${gameState.currentSeason}</h2>
+                <div class="p-4 bg-green-100 border border-green-200 rounded-lg text-center mb-6">
+                    <p class="font-semibold text-green-800">Prêmio por colocação no campeonato:</p>
+                    <p class="text-2xl font-bold text-green-700">R$ ${prize.toLocaleString('pt-BR')}</p>
+                </div>
+                <div class="space-y-6">
+                    ${renderList('Jogadores que Evoluíram', improved, 'green')}
+                    ${renderList('Jogadores que Regrediram', declined, 'yellow')}
+                    ${renderList('Jogadores Aposentados', retired, 'red')}
+                    ${improved.length === 0 && declined.length === 0 && retired.length === 0 ? '<p class="text-center text-gray-500">Nenhuma mudança significativa no seu elenco nesta temporada.</p>' : ''}
+                </div>
+                <button onclick="startNewSeason()" class="w-full mt-8 p-3 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 transition shadow">Iniciar Nova Temporada</button>`;
             mainContent.appendChild(container);
         }
+
+        function renderFinances() {
+            const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            const { key, order } = gameState.sorting.finances;
+            const sortedPlayers = sortData(team.players, key, order);
+
+            const container = document.createElement('div');
+            container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
+            container.innerHTML = `
+                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6">
+                    <h2 class="text-2xl font-bold">Relatório Financeiro</h2>
+                    <button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                    <div class="bg-blue-100 p-4 rounded-lg">
+                        <h3 class="text-lg font-semibold text-blue-800">Caixa Atual</h3>
+                        <p class="text-3xl font-bold text-blue-700">R$ ${team.cash.toLocaleString('pt-BR')}</p>
+                    </div>
+                    <div class="bg-red-100 p-4 rounded-lg">
+                        <h3 class="text-lg font-semibold text-red-800">Despesa Mensal (Salários)</h3>
+                        <p class="text-3xl font-bold text-red-700">R$ ${team.players.reduce((sum, p) => sum + p.salary, 0).toLocaleString('pt-BR')}</p>
+                    </div>
+                    <div class="bg-green-100 p-4 rounded-lg">
+                        <h3 class="text-lg font-semibold text-green-800">Receita da Temporada</h3>
+                        <p class="text-3xl font-bold text-green-700">R$ ${team.seasonIncome.toLocaleString('pt-BR')}</p>
+                    </div>
+                </div>
+                <h3 class="text-xl font-bold mt-8 mb-2">Folha Salarial Detalhada</h3>
+                <div class="overflow-x-auto table-responsive rounded-lg border">
+                    <table class="min-w-full bg-white text-sm text-left">
+                        <thead class="bg-gray-200"><tr>
+                            <th class="p-3 font-semibold sortable" onclick="handleSort('finances', 'name')">Nome ${getSortIcon('finances', 'name')}</th>
+                            <th class="p-3 font-semibold sortable" onclick="handleSort('finances', 'age')">Idade ${getSortIcon('finances', 'age')}</th>
+                            <th class="p-3 font-semibold text-center sortable" onclick="handleSort('finances', 'skill')">Habil. ${getSortIcon('finances', 'skill')}</th>
+                            <th class="p-3 font-semibold text-right sortable" onclick="handleSort('finances', 'salary')">Salário Mensal ${getSortIcon('finances', 'salary')}</th>
+                        </tr></thead>
+                        <tbody>
+                            ${sortedPlayers.map(p => `
+                                <tr class="border-b hover:bg-gray-50">
+                                    <td class="p-3 font-medium">${p.name}</td>
+                                    <td class="p-3">${p.age}</td>
+                                    <td class="p-3 text-center font-bold text-blue-600">${p.skill}</td>
+                                    <td class="p-3 text-right">R$ ${p.salary.toLocaleString('pt-BR')}</td>
+                                </tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            mainContent.appendChild(container);
+        }
+
+        function renderStatistics() {
+            const activeTab = gameState.statsView.activeTab;
+            const scorersTabActive = activeTab === 'scorers';
+            const historyTabActive = activeTab === 'history';
+
+            let contentHTML = '';
+            if (scorersTabActive) {
+                const { key, order } = gameState.sorting.scorers;
+                const sortedScorers = sortData(gameState.playerStats, key, order).filter(p => p.goals > 0);
+                contentHTML = `
+                    <div class="overflow-x-auto table-responsive rounded-lg border">
+                        <table class="min-w-full bg-white text-sm text-left">
+                            <thead class="bg-gray-200"><tr>
+                                <th class="p-3 font-semibold sortable" onclick="handleSort('scorers', 'name')">Jogador ${getSortIcon('scorers', 'name')}</th>
+                                <th class="p-3 font-semibold sortable" onclick="handleSort('scorers', 'teamName')">Time ${getSortIcon('scorers', 'teamName')}</th>
+                                <th class="p-3 font-semibold text-center sortable" onclick="handleSort('scorers', 'goals')">Gols ${getSortIcon('scorers', 'goals')}</th>
+                            </tr></thead>
+                            <tbody>
+                                ${sortedScorers.map(p => `
+                                    <tr class="border-b hover:bg-gray-50">
+                                        <td class="p-3 font-medium">${p.name}</td>
+                                        <td class="p-3">${p.teamName}</td>
+                                        <td class="p-3 text-center font-bold">${p.goals}</td>
+                                    </tr>`).join('')}
+                            </tbody>
+                        </table>
+                    </div>`;
+            } else { // History tab
+                contentHTML = `
+                    <div class="overflow-x-auto table-responsive rounded-lg border">
+                        <table class="min-w-full bg-white text-sm text-left">
+                            <thead class="bg-gray-200"><tr><th class="p-3 font-semibold">Temporada</th><th class="p-3 font-semibold">Time</th><th class="p-3 font-semibold text-center">Posição Final</th></tr></thead>
+                            <tbody>
+                                ${gameState.managerHistory.length > 0 ? gameState.managerHistory.map(h => `
+                                    <tr class="border-b hover:bg-gray-50 ${h.champion ? 'bg-yellow-100' : ''}">
+                                        <td class="p-3 font-medium">${h.season}</td>
+                                        <td class="p-3">${h.teamName}</td>
+                                        <td class="p-3 text-center font-bold">${h.position}º ${h.champion ? '&#127942;' : ''}</td>
+                                    </tr>`).join('') : '<tr><td colspan="3" class="p-4 text-center text-gray-500">Nenhum histórico para exibir. Complete uma temporada!</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>`;
+            }
+
+            const container = document.createElement('div');
+            container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
+            container.innerHTML = `
+                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4">
+                    <h2 class="text-2xl font-bold">Estatísticas e Histórico</h2>
+                    <button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button>
+                </div>
+                <!-- Tabs -->
+                <div class="border-b border-gray-200 mb-4">
+                    <nav class="-mb-px flex space-x-6">
+                        <button onclick="changeView('statistics', {tab: 'scorers'})" class="py-2 px-1 border-b-2 font-medium text-sm ${scorersTabActive ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}">Artilheiros</button>
+                        <button onclick="changeView('statistics', {tab: 'history'})" class="py-2 px-1 border-b-2 font-medium text-sm ${historyTabActive ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}">Hall da Fama</button>
+                    </nav>
+                </div>
+                ${contentHTML}
+            `;
+            mainContent.appendChild(container);
+        }
+
 
         function renderTransfers() {
             const playerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
             const activeTab = gameState.transferMarket.activeTab;
             const buyTabActive = activeTab === 'buy';
+            
             let tableContentHTML = '';
             if (buyTabActive) {
-                const availablePlayers = gameState.teams.filter(t => t.id !== playerTeam.id).flatMap(t => t.players).sort((a,b) => b.skill - a.skill);
-                tableContentHTML = `<thead class="bg-gray-200"><tr><th class="p-3 font-semibold">Nome</th><th class="p-3 font-semibold">Pos.</th><th class="p-3 font-semibold text-center">Habil.</th><th class="p-3 font-semibold text-right">Valor</th><th class="p-3 font-semibold text-center">Ação</th></tr></thead><tbody>${availablePlayers.map(p => { const canAfford = playerTeam.cash >= p.value; return `<tr><td class="p-3 font-medium">${p.name}</td><td class="p-3">${p.position}</td><td class="p-3 text-center font-bold text-blue-600">${p.skill}</td><td class="p-3 text-right">R$ ${p.value.toLocaleString('pt-BR')}</td><td class="p-3 text-center"><button ${canAfford ? '' : 'disabled'} onclick="buyPlayer('${p.id}')" class="px-3 py-1 bg-green-500 text-white text-xs font-bold rounded hover:bg-green-600 transition disabled:opacity-50 disabled:cursor-not-allowed">Comprar</button></td></tr>` }).join('')}</tbody>`;
+                const viewKey = 'transfers-buy';
+                const { key, order } = gameState.sorting[viewKey];
+                const availablePlayers = sortData(gameState.teams.filter(t => t.id !== playerTeam.id).flatMap(t => t.players), key, order);
+                tableContentHTML = `<thead class="bg-gray-200"><tr>
+                    <th class="p-3 font-semibold sortable" onclick="handleSort('${viewKey}', 'name')">Nome ${getSortIcon(viewKey, 'name')}</th>
+                    <th class="p-3 font-semibold sortable" onclick="handleSort('${viewKey}', 'position')">Pos. ${getSortIcon(viewKey, 'position')}</th>
+                    <th class="p-3 font-semibold text-center sortable" onclick="handleSort('${viewKey}', 'skill')">Habil. ${getSortIcon(viewKey, 'skill')}</th>
+                    <th class="p-3 font-semibold text-right sortable" onclick="handleSort('${viewKey}', 'value')">Valor ${getSortIcon(viewKey, 'value')}</th>
+                    <th class="p-3 font-semibold text-center">Ação</th>
+                </tr></thead><tbody>${availablePlayers.map(p => { const canAfford = playerTeam.cash >= p.value; return `<tr class="border-b hover:bg-gray-50"><td class="p-3 font-medium">${p.name}</td><td class="p-3">${p.position}</td><td class="p-3 text-center font-bold text-blue-600">${p.skill}</td><td class="p-3 text-right">R$ ${p.value.toLocaleString('pt-BR')}</td><td class="p-3 text-center"><button ${canAfford ? '' : 'disabled'} onclick="buyPlayer('${p.id}')" class="px-3 py-1 bg-green-500 text-white text-xs font-bold rounded hover:bg-green-600 transition disabled:opacity-50 disabled:cursor-not-allowed">Comprar</button></td></tr>` }).join('')}</tbody>`;
             } else {
-                const sortedPlayers = [...playerTeam.players].sort((a,b) => b.value - a.value);
-                tableContentHTML = `<thead class="bg-gray-200"><tr><th class="p-3 font-semibold">Nome</th><th class="p-3 font-semibold">Pos.</th><th class="p-3 font-semibold text-center">Habil.</th><th class="p-3 font-semibold text-right">Valor</th><th class="p-3 font-semibold text-center">Ação</th></tr></thead><tbody>${sortedPlayers.map(p => `<tr><td class="p-3 font-medium">${p.name}</td><td class="p-3">${p.position}</td><td class="p-3 text-center font-bold text-blue-600">${p.skill}</td><td class="p-3 text-right">R$ ${p.value.toLocaleString('pt-BR')}</td><td class="p-3 text-center"><button onclick="sellPlayer('${p.id}')" class="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded hover:bg-red-600 transition">Vender</button></td></tr>`).join('')}</tbody>`;
+                const viewKey = 'transfers-sell';
+                const { key, order } = gameState.sorting[viewKey];
+                const sortedPlayers = sortData(playerTeam.players, key, order);
+                tableContentHTML = `<thead class="bg-gray-200"><tr>
+                    <th class="p-3 font-semibold sortable" onclick="handleSort('${viewKey}', 'name')">Nome ${getSortIcon(viewKey, 'name')}</th>
+                    <th class="p-3 font-semibold sortable" onclick="handleSort('${viewKey}', 'position')">Pos. ${getSortIcon(viewKey, 'position')}</th>
+                    <th class="p-3 font-semibold text-center sortable" onclick="handleSort('${viewKey}', 'skill')">Habil. ${getSortIcon(viewKey, 'skill')}</th>
+                    <th class="p-3 font-semibold text-right sortable" onclick="handleSort('${viewKey}', 'value')">Valor ${getSortIcon(viewKey, 'value')}</th>
+                    <th class="p-3 font-semibold text-center">Ação</th>
+                </tr></thead><tbody>${sortedPlayers.map(p => `<tr class="border-b hover:bg-gray-50"><td class="p-3 font-medium">${p.name}</td><td class="p-3">${p.position}</td><td class="p-3 text-center font-bold text-blue-600">${p.skill}</td><td class="p-3 text-right">R$ ${p.value.toLocaleString('pt-BR')}</td><td class="p-3 text-center"><button onclick="sellPlayer('${p.id}')" class="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded hover:bg-red-600 transition">Vender</button></td></tr>`).join('')}</tbody>`;
             }
             const container = document.createElement('div');
             container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
