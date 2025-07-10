@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Técnicos Cartola</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Custom styles */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        #main-content > div {
+            animation: fadeIn 0.4s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .table-responsive::-webkit-scrollbar { height: 8px; }
+        .table-responsive::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+        .table-responsive::-webkit-scrollbar-thumb { background: #888; border-radius: 10px; }
+        .table-responsive::-webkit-scrollbar-thumb:hover { background: #555; }
+        
+        /* Notification styles */
+        #notification-banner {
+            transition: opacity 0.5s, transform 0.5s;
+        }
+        @keyframes shrink {
+            from { width: 100%; }
+            to { width: 0%; }
+        }
+        .progress-bar-animate {
+            animation: shrink 3s linear forwards;
+        }
+
+        /* Pitch styles */
+        .pitch {
+            background-color: #2a8e43;
+            background-image:
+                linear-gradient(to bottom, transparent 50%, rgba(0,0,0,0.1) 50%),
+                linear-gradient(to right, #2a8e43 50%, #31a14d 50%);
+            background-size: 100% 50px, 100% 100%;
+            border: 2px solid white;
+            position: relative;
+        }
+        .center-circle {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 120px;
+            height: 120px;
+            border: 2px solid rgba(255, 255, 255, 0.6);
+            border-radius: 50%;
+        }
+        .player-marker {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            text-align: center;
+            cursor: grab;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border-radius: 8px;
+        }
+        .player-marker.dragging {
+            opacity: 0.5;
+        }
+        .player-marker.drag-over {
+            box-shadow: 0 0 10px 3px yellow;
+        }
+        .player-marker:active {
+            cursor: grabbing;
+            transform: scale(1.1);
+            z-index: 10;
+        }
+        .player-name {
+            background-color: rgba(0, 0, 0, 0.6);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        .status-icon {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            border: 1px solid white;
+        }
+
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <!-- Notification Banner -->
+    <div id="notification-banner" class="fixed top-5 right-5 shadow-lg rounded-lg p-4 opacity-0 transform translate-y-10 z-50 overflow-hidden cursor-pointer">
+        <span id="notification-message"></span>
+        <div id="notification-progress" class="absolute bottom-0 left-0 h-1 bg-white/50"></div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="container mx-auto p-4 max-w-7xl">
+
+        <!-- Header -->
+        <header class="bg-white shadow-md rounded-lg p-4 mb-6 flex flex-wrap justify-between items-center">
+            <h1 class="text-2xl md:text-3xl font-bold text-blue-600 cursor-pointer" onclick="changeView('dashboard')">Técnicos Cartola</h1>
+            <div id="team-info" class="text-right mt-2 md:mt-0"></div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main id="main-content"></main>
+
+    </div>
+
+    <!-- JavaScript Game Logic -->
+    <script>
+        // --- GAME CONFIGURATION AND DATA ---
+        const POSITIONS = { GOALKEEPER: 'Goleiro', DEFENDER: 'Defensor', MIDFIELDER: 'Meio-campo', ATTACKER: 'Atacante' };
+        const FORMATIONS = {
+            '4-4-2': { DEFENDER: 4, MIDFIELDER: 4, ATTACKER: 2 },
+            '4-3-3': { DEFENDER: 4, MIDFIELDER: 3, ATTACKER: 3 },
+            '5-3-2': { DEFENDER: 5, MIDFIELDER: 3, ATTACKER: 2 },
+        };
+        const TEAM_NAMES = ["Atlético Carioca", "Metropolitanos FC", "Porto Real", "Unidos da Vila", "Serra Azul EC", "Costa Dourada", "Real Baixada", "Imperial FC", "Trovão Azul", "Estrela do Sul", "Norte Catarinense", "Gaviões da Ilha", "Tigres da Fronteira", "União Paulista", "Verde Vale", "Capital FC", "Andorinhas", "Falcão Dourado", "Tubarões", "Pioneiros FC"];
+        const FIRST_NAMES = ["Carlos", "Bruno", "Lucas", "Matheus", "Gabriel", "Felipe", "Rafael", "Daniel", "André", "Thiago", "Vinicius", "Ricardo", "Eduardo", "Leandro", "Sérgio"];
+        const LAST_NAMES = ["Silva", "Santos", "Oliveira", "Souza", "Lima", "Pereira", "Ferreira", "Costa", "Rodrigues", "Almeida", "Nascimento", "Gomes", "Martins", "Araújo", "Melo"];
+        const MIN_SQUAD_SIZE = 18;
+        const MIN_GOALKEEPERS = 2;
+
+        // --- GAME STATE ---
+        const gameState = {
+            playerTeamId: null,
+            teams: [],
+            leagueTable: [],
+            fixtures: [],
+            currentRound: 1,
+            lastRoundResults: [],
+            view: 'team-selection',
+            transferMarket: { activeTab: 'buy' },
+            dragAndDrop: { draggedPlayerId: null },
+            endOfSeasonReport: { improved: [], declined: [], retired: [] }
+        };
+
+        // --- CORE LOGIC ---
+        const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+        function generatePlayer(teamId, position) {
+            const name = `${FIRST_NAMES[getRandomInt(0, FIRST_NAMES.length - 1)]} ${LAST_NAMES[getRandomInt(0, LAST_NAMES.length - 1)]}`;
+            return { id: crypto.randomUUID(), name, age: getRandomInt(18, 34), position, skill: getRandomInt(40, 85), strength: getRandomInt(40, 85), value: getRandomInt(100, 5000) * 1000, teamId, injuryTurns: 0, isSuspended: false };
+        }
+
+        function generateTeam(id, name) {
+            const players = [];
+            for (let i = 0; i < 3; i++) players.push(generatePlayer(id, POSITIONS.GOALKEEPER));
+            for (let i = 0; i < 8; i++) players.push(generatePlayer(id, POSITIONS.DEFENDER));
+            for (let i = 0; i < 8; i++) players.push(generatePlayer(id, POSITIONS.MIDFIELDER));
+            for (let i = 0; i < 6; i++) players.push(generatePlayer(id, POSITIONS.ATTACKER));
+            const team = { id, name, players, cash: getRandomInt(1, 10) * 1000000, tactic: '4-4-2', startingXI: [], reserves: [] };
+            setInitialLineup(team);
+            return team;
+        }
+
+        function setInitialLineup(team) {
+            const formation = FORMATIONS[team.tactic];
+            team.startingXI = [];
+            
+            const availablePlayers = team.players.filter(p => p.injuryTurns === 0 && !p.isSuspended);
+            const remainingForBench = [...availablePlayers];
+
+            const pickPlayers = (pos, count) => {
+                const chosenPlayers = remainingForBench
+                    .filter(p => p.position === pos)
+                    .sort((a, b) => b.skill - a.skill)
+                    .slice(0, count);
+                
+                chosenPlayers.forEach(p => {
+                    const index = remainingForBench.findIndex(ap => ap.id === p.id);
+                    if (index > -1) remainingForBench.splice(index, 1);
+                });
+
+                return chosenPlayers.map(p => p.id);
+            };
+
+            team.startingXI.push(...pickPlayers(POSITIONS.GOALKEEPER, 1));
+            team.startingXI.push(...pickPlayers(POSITIONS.DEFENDER, formation.DEFENDER));
+            team.startingXI.push(...pickPlayers(POSITIONS.MIDFIELDER, formation.MIDFIELDER));
+            team.startingXI.push(...pickPlayers(POSITIONS.ATTACKER, formation.ATTACKER));
+            
+            team.reserves = remainingForBench.map(p => p.id);
+        }
+
+        function createLeagueTable() {
+            gameState.leagueTable = gameState.teams.map(team => ({ teamId: team.id, teamName: team.name, played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, goalDifference: 0, points: 0 }));
+        }
+
+        function generateFixtures() {
+            const teams = [...gameState.teams];
+            if (teams.length % 2 !== 0) teams.push({ id: -1, name: "BYE" });
+            const numRounds = teams.length - 1;
+            const halfSeason = teams.length / 2;
+            const fixtures = [];
+            const teamIds = teams.map(t => t.id);
+            for (let round = 0; round < numRounds; round++) {
+                const roundFixtures = [];
+                for (let match = 0; match < halfSeason; match++) {
+                    const home = teamIds[match];
+                    const away = teamIds[teamIds.length - 1 - match];
+                    if (home !== -1 && away !== -1) roundFixtures.push({ homeTeamId: home, awayTeamId: away, round: round + 1 });
+                }
+                fixtures.push(roundFixtures);
+                const lastTeam = teamIds.pop();
+                teamIds.splice(1, 0, lastTeam);
+            }
+            const secondHalfFixtures = [];
+            fixtures.forEach((round, roundIndex) => {
+                const newRound = round.map(match => ({ homeTeamId: match.awayTeamId, awayTeamId: match.homeTeamId, round: roundIndex + numRounds + 1 }));
+                secondHalfFixtures.push(newRound);
+            });
+            gameState.fixtures = [...fixtures, ...secondHalfFixtures];
+        }
+
+        function getTeamStrength(teamId) {
+            const team = gameState.teams.find(t => t.id === teamId);
+            if (!team) return { attack: 0, defense: 0 };
+            const startingPlayers = team.players.filter(p => team.startingXI.includes(p.id));
+            const getSectorStrength = (position) => {
+                const players = startingPlayers.filter(p => p.position === position);
+                if (players.length === 0) return 0;
+                return players.reduce((sum, p) => sum + p.skill, 0) / players.length;
+            };
+            const gkStrength = getSectorStrength(POSITIONS.GOALKEEPER);
+            const defStrength = getSectorStrength(POSITIONS.DEFENDER);
+            const midStrength = getSectorStrength(POSITIONS.MIDFIELDER);
+            const attStrength = getSectorStrength(POSITIONS.ATTACKER);
+            const attack = (attStrength * 0.5) + (midStrength * 0.5);
+            const defense = (defStrength * 0.6) + (midStrength * 0.3) + (gkStrength * 0.1);
+            return { attack: attack || 50, defense: defense || 50 };
+        }
+
+        function simulateMatch(match) {
+            const homeTeam = gameState.teams.find(t => t.id === match.homeTeamId);
+            const awayTeam = gameState.teams.find(t => t.id === match.awayTeamId);
+            const homeStrength = getTeamStrength(match.homeTeamId);
+            const awayStrength = getTeamStrength(match.awayTeamId);
+            const homeAdvantage = 1.1;
+            const homeGoalChance = (homeStrength.attack / awayStrength.defense) * homeAdvantage;
+            const awayGoalChance = (awayStrength.attack / homeStrength.defense);
+            const homeGoals = Math.floor(Math.random() * (homeGoalChance * 2.5));
+            const awayGoals = Math.floor(Math.random() * (awayGoalChance * 2.5));
+            
+            const matchEvents = { injuries: [], suspensions: [] };
+            const playersInMatch = [...homeTeam.players.filter(p => homeTeam.startingXI.includes(p.id)), ...awayTeam.players.filter(p => awayTeam.startingXI.includes(p.id))];
+
+            playersInMatch.forEach(player => {
+                if (player.injuryTurns > 0 || player.isSuspended) return; // Already unavailable
+                if (Math.random() < 0.015) { // 1.5% chance of injury
+                    player.injuryTurns = getRandomInt(1, 4);
+                    matchEvents.injuries.push({ name: player.name, teamId: player.teamId, turns: player.injuryTurns });
+                }
+                if (Math.random() < 0.02) { // 2% chance of red card
+                    player.isSuspended = true;
+                    matchEvents.suspensions.push({ name: player.name, teamId: player.teamId });
+                }
+            });
+
+            return { ...match, homeGoals, awayGoals, events: matchEvents };
+        }
+        
+        function updateTableWithResult(result) {
+            const homeStats = gameState.leagueTable.find(e => e.teamId === result.homeTeamId);
+            const awayStats = gameState.leagueTable.find(e => e.teamId === result.awayTeamId);
+            homeStats.played++; awayStats.played++;
+            homeStats.goalsFor += result.homeGoals; awayStats.goalsFor += result.awayGoals;
+            homeStats.goalsAgainst += result.awayGoals; awayStats.goalsAgainst += result.homeGoals;
+            homeStats.goalDifference = homeStats.goalsFor - homeStats.goalsAgainst;
+            awayStats.goalDifference = awayStats.goalsFor - awayStats.goalsAgainst;
+            if (result.homeGoals > result.awayGoals) { homeStats.wins++; homeStats.points += 3; awayStats.losses++; } 
+            else if (result.awayGoals > result.homeGoals) { awayStats.wins++; awayStats.points += 3; homeStats.losses++; }
+            else { homeStats.draws++; awayStats.draws++; homeStats.points++; awayStats.points++; }
+        }
+
+        function processPostRoundUpdates() {
+            gameState.teams.forEach(team => {
+                team.players.forEach(player => {
+                    if (player.isSuspended) {
+                        player.isSuspended = false; // Suspension is cleared after the round is processed
+                    }
+                    if (player.injuryTurns > 0) {
+                        player.injuryTurns--;
+                    }
+                });
+                setInitialLineup(team); // Re-evaluate lineup after updates
+            });
+        }
+
+        function simulateRound() {
+            if (gameState.currentRound > gameState.fixtures.length) { return; }
+            
+            // Process updates from *before* this round (e.g., players recovering)
+            processPostRoundUpdates();
+
+            const isLastRound = gameState.currentRound === gameState.fixtures.length;
+            
+            const currentFixtures = gameState.fixtures[gameState.currentRound - 1];
+            const results = currentFixtures.map(match => simulateMatch(match));
+            results.forEach(result => updateTableWithResult(result));
+            gameState.lastRoundResults = results;
+            
+            if (isLastRound) {
+                handleEndOfSeason();
+                changeView('end-of-season');
+            } else {
+                gameState.currentRound++;
+                changeView('round-results');
+            }
+        }
+        
+        function handleEndOfSeason() {
+            const report = { improved: [], declined: [], retired: [] };
+            gameState.teams.forEach(team => {
+                const retiredPlayers = [];
+                team.players.forEach(player => {
+                    const originalSkill = player.skill;
+                    player.age++;
+                    if (player.age >= 36 && Math.random() < 0.25) {
+                        retiredPlayers.push(player.id);
+                        if (team.id === gameState.playerTeamId) report.retired.push({ name: player.name, age: player.age });
+                    } else if (player.age < 24 && Math.random() < 0.5) {
+                        const improvement = getRandomInt(1, 3);
+                        player.skill = Math.min(100, player.skill + improvement);
+                        if (team.id === gameState.playerTeamId) report.improved.push({ name: player.name, change: `+${player.skill - originalSkill}` });
+                    } else if (player.age > 30 && Math.random() < 0.4) {
+                        const decline = getRandomInt(1, 2);
+                        player.skill = Math.max(10, player.skill - decline);
+                        if (team.id === gameState.playerTeamId) report.declined.push({ name: player.name, change: `-${originalSkill - player.skill}` });
+                    }
+                });
+                team.players = team.players.filter(p => !retiredPlayers.includes(p.id));
+                while (team.players.length < MIN_SQUAD_SIZE) {
+                    const pos = [POSITIONS.DEFENDER, POSITIONS.MIDFIELDER, POSITIONS.ATTACKER][getRandomInt(0, 2)];
+                    team.players.push(generatePlayer(team.id, pos));
+                }
+            });
+            gameState.endOfSeasonReport = report;
+        }
+
+        function startNewSeason() {
+            gameState.currentRound = 1;
+            gameState.lastRoundResults = [];
+            createLeagueTable();
+            generateFixtures();
+            gameState.teams.forEach(setInitialLineup);
+            changeView('dashboard');
+        }
+
+        function buyPlayer(playerId) {
+            let playerToBuy, sellerTeam;
+            for (const team of gameState.teams) {
+                const player = team.players.find(p => p.id === playerId);
+                if (player) { playerToBuy = player; sellerTeam = team; break; }
+            }
+            const buyerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            if (!playerToBuy || !sellerTeam || !buyerTeam || sellerTeam.id === buyerTeam.id) return;
+            if (buyerTeam.cash >= playerToBuy.value) {
+                buyerTeam.cash -= playerToBuy.value;
+                sellerTeam.cash += playerToBuy.value;
+                sellerTeam.players = sellerTeam.players.filter(p => p.id !== playerId);
+                playerToBuy.teamId = buyerTeam.id;
+                buyerTeam.players.push(playerToBuy);
+                setInitialLineup(buyerTeam);
+                showNotification(`Jogador ${playerToBuy.name} comprado com sucesso!`, 'success');
+                render();
+            } else {
+                showNotification("Dinheiro insuficiente!", 'error');
+            }
+        }
+
+        function sellPlayer(playerId) {
+            const sellerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            const playerToSell = sellerTeam.players.find(p => p.id === playerId);
+            if (!playerToSell) return;
+            if (sellerTeam.players.length <= MIN_SQUAD_SIZE) { showNotification(`Venda bloqueada. Mínimo de ${MIN_SQUAD_SIZE} jogadores.`, 'error'); return; }
+            const goalkeepers = sellerTeam.players.filter(p => p.position === POSITIONS.GOALKEEPER);
+            if (playerToSell.position === POSITIONS.GOALKEEPER && goalkeepers.length <= MIN_GOALKEEPERS) { showNotification(`Venda bloqueada. Mínimo de ${MIN_GOALKEEPERS} goleiros.`, 'error'); return; }
+            const potentialBuyers = gameState.teams.filter(t => t.id !== sellerTeam.id && t.cash >= playerToSell.value);
+            if (potentialBuyers.length > 0) {
+                const buyerTeam = potentialBuyers[getRandomInt(0, potentialBuyers.length - 1)];
+                sellerTeam.cash += playerToSell.value;
+                buyerTeam.cash -= playerToSell.value;
+                sellerTeam.players = sellerTeam.players.filter(p => p.id !== playerId);
+                playerToSell.teamId = buyerTeam.id;
+                buyerTeam.players.push(playerToSell);
+                setInitialLineup(sellerTeam);
+                showNotification(`Jogador ${playerToSell.name} vendido para ${buyerTeam.name}!`, 'success');
+                render();
+            } else {
+                showNotification("Nenhum time tem dinheiro para comprar este jogador.", 'error');
+            }
+        }
+
+        function changeFormation(formation) {
+            const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            if (team && FORMATIONS[formation]) {
+                team.tactic = formation;
+                setInitialLineup(team);
+                render();
+            }
+        }
+
+        function swapPlayers(player1Id, player2Id) {
+            const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            if (!team || player1Id === player2Id) return;
+            const player1 = team.players.find(p => p.id === player1Id);
+            const player2 = team.players.find(p => p.id === player2Id);
+            if (player1.position !== player2.position) { showNotification("Troca inválida. Os jogadores devem ser da mesma posição.", "error"); return; }
+            const p1_isStarter = team.startingXI.includes(player1Id);
+            const p2_isStarter = team.startingXI.includes(player2Id);
+            if (p1_isStarter && !p2_isStarter) {
+                const p1_index = team.startingXI.indexOf(player1Id);
+                const p2_index = team.reserves.indexOf(player2Id);
+                team.startingXI[p1_index] = player2Id;
+                team.reserves[p2_index] = player1Id;
+            } else if (!p1_isStarter && p2_isStarter) {
+                const p1_index = team.reserves.indexOf(player1Id);
+                const p2_index = team.startingXI.indexOf(player2Id);
+                team.reserves[p1_index] = player2Id;
+                team.startingXI[p2_index] = player1Id;
+            }
+            render();
+        }
+
+        function initGame() {
+            for (let i = 0; i < TEAM_NAMES.length; i++) gameState.teams.push(generateTeam(i, TEAM_NAMES[i]));
+            createLeagueTable();
+            generateFixtures();
+            render();
+        }
+
+        function selectTeam(teamId) {
+            gameState.playerTeamId = teamId;
+            changeView('dashboard');
+        }
+
+        function changeView(newView, options = {}) {
+            if (gameState.playerTeamId === null && newView !== 'team-selection') return;
+            gameState.view = newView;
+            if (newView === 'transfers' && options.tab) { gameState.transferMarket.activeTab = options.tab; }
+            render();
+        }
+
+        // --- DRAG AND DROP HANDLERS ---
+        function handleDragStart(e, playerId) { gameState.dragAndDrop.draggedPlayerId = playerId; e.target.classList.add('dragging'); }
+        function handleDragEnd(e) { e.target.classList.remove('dragging'); }
+        function handleDragOver(e) { e.preventDefault(); const target = e.target.closest('.player-marker'); if (target) target.classList.add('drag-over'); }
+        function handleDragLeave(e) { const target = e.target.closest('.player-marker'); if (target) target.classList.remove('drag-over'); }
+        function handleDrop(e, targetPlayerId) {
+            e.preventDefault();
+            const target = e.target.closest('.player-marker');
+            if (target) target.classList.remove('drag-over');
+            const draggedPlayerId = gameState.dragAndDrop.draggedPlayerId;
+            if (draggedPlayerId && targetPlayerId) swapPlayers(draggedPlayerId, targetPlayerId);
+            gameState.dragAndDrop.draggedPlayerId = null;
+        }
+
+        // --- UI RENDERING ---
+        const mainContent = document.getElementById('main-content');
+        const notificationBanner = document.getElementById('notification-banner');
+        const notificationMessage = document.getElementById('notification-message');
+        const notificationProgress = document.getElementById('notification-progress');
+        let notificationTimeout;
+
+        function hideNotification() {
+            if (!notificationBanner.classList.contains('opacity-100')) return;
+            clearTimeout(notificationTimeout);
+            notificationBanner.classList.remove('opacity-100');
+            notificationBanner.classList.add('opacity-0', 'translate-y-10');
+        }
+
+        function showNotification(message, type = 'info') {
+            clearTimeout(notificationTimeout);
+            const colors = { success: 'bg-green-500 text-white', error: 'bg-red-500 text-white', info: 'bg-blue-500 text-white' };
+            notificationBanner.className = 'fixed top-5 right-5 shadow-lg rounded-lg p-4 z-50 overflow-hidden cursor-pointer';
+            notificationBanner.classList.add(...colors[type].split(' '));
+            notificationMessage.textContent = message;
+            notificationBanner.onclick = hideNotification;
+            notificationBanner.classList.remove('opacity-0', 'translate-y-10');
+            notificationBanner.classList.add('opacity-100');
+            notificationProgress.classList.remove('progress-bar-animate');
+            void notificationProgress.offsetWidth;
+            notificationProgress.classList.add('progress-bar-animate');
+            notificationTimeout = setTimeout(hideNotification, 3000);
+        }
+
+        function render() {
+            mainContent.innerHTML = '';
+            switch (gameState.view) {
+                case 'team-selection': renderTeamSelection(); break;
+                case 'dashboard': renderDashboard(); break;
+                case 'tactics': renderTactics(); break;
+                case 'league': renderLeagueTable(); break;
+                case 'round-results': renderRoundResults(); break;
+                case 'transfers': renderTransfers(); break;
+                case 'end-of-season': renderEndOfSeason(); break;
+                default: renderTeamSelection();
+            }
+            if (gameState.playerTeamId !== null) {
+                 const playerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
+                 document.getElementById('team-info').innerHTML = `<h3 class="font-semibold text-lg">${playerTeam.name}</h3><p class="text-sm text-green-600">Caixa: R$ ${playerTeam.cash.toLocaleString('pt-BR')}</p>`;
+            }
+        }
+
+        function renderTeamSelection() {
+            document.getElementById('team-info').innerHTML = '';
+            const container = document.createElement('div');
+            container.className = "bg-white shadow-md rounded-lg p-6";
+            container.innerHTML = `<h2 class="text-2xl font-bold mb-4 text-center">Escolha seu Time para Gerenciar</h2><div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">${gameState.teams.map(team => `<button onclick="selectTeam(${team.id})" class="p-4 border rounded-lg text-center hover:bg-blue-600 hover:text-white hover:shadow-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500"><span class="font-semibold">${team.name}</span></button>`).join('')}</div>`;
+            mainContent.appendChild(container);
+        }
+
+        function renderDashboard() {
+            const isEndOfSeason = gameState.currentRound > gameState.fixtures.length;
+            const buttonText = gameState.currentRound === gameState.fixtures.length ? "Simular Última Rodada" : "Simular Próxima Rodada";
+            let nextMatchHTML = '<p class="text-center text-xl font-bold text-green-600">Fim de temporada!</p>';
+            if (!isEndOfSeason) {
+                const currentRoundFixtures = gameState.fixtures[gameState.currentRound - 1] || [];
+                const nextMatch = currentRoundFixtures.find(m => m.homeTeamId === gameState.playerTeamId || m.awayTeamId === gameState.playerTeamId);
+                if (nextMatch) {
+                    const homeTeam = gameState.teams.find(t => t.id === nextMatch.homeTeamId);
+                    const awayTeam = gameState.teams.find(t => t.id === nextMatch.awayTeamId);
+                    nextMatchHTML = `<div class="flex justify-center items-center space-x-2 sm:space-x-4 text-lg sm:text-xl"><span class="font-bold text-right w-2/5 truncate">${homeTeam.name}</span><span class="text-gray-500">vs</span><span class="font-bold text-left w-2/5 truncate">${awayTeam.name}</span></div>`;
+                }
+            }
+            const container = document.createElement('div');
+            container.className = "bg-white shadow-md rounded-lg p-6";
+            container.innerHTML = `
+                <h2 class="text-2xl font-bold mb-4">Painel Principal</h2>
+                <p>Bem-vindo, técnico! O que você gostaria de fazer?</p>
+                <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 text-white">
+                    <button onclick="changeView('tactics')" class="p-4 bg-blue-500 rounded-lg font-semibold hover:bg-blue-600 transition shadow">Ver Elenco/Táticas</button>
+                    <button onclick="changeView('league')" class="p-4 bg-green-500 rounded-lg font-semibold hover:bg-green-600 transition shadow">Tabela do Campeonato</button>
+                    <button onclick="changeView('transfers')" class="p-4 bg-yellow-500 rounded-lg font-semibold hover:bg-yellow-600 transition shadow">Mercado</button>
+                </div>
+                <div class="mt-8 p-4 bg-gray-50 rounded-lg border">
+                    <h3 class="font-bold text-lg mb-2 text-center">Próxima Partida (Rodada ${isEndOfSeason ? gameState.fixtures.length : gameState.currentRound})</h3>
+                    <div class="py-4">${nextMatchHTML}</div>
+                    <button onclick="${isEndOfSeason ? '' : 'simulateRound()'}" class="w-full mt-4 p-3 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 transition shadow ${isEndOfSeason ? 'opacity-50 cursor-not-allowed' : ''}">${buttonText}</button>
+                </div>`;
+            mainContent.appendChild(container);
+        }
+
+        function renderTactics() {
+            const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            const getPlayerById = (id) => team.players.find(p => p.id === id);
+
+            const renderPlayerMarker = (player, isUnavailable = false) => {
+                if (!player) return '';
+                const posColors = { [POSITIONS.GOALKEEPER]: 'bg-yellow-500', [POSITIONS.DEFENDER]: 'bg-blue-500', [POSITIONS.MIDFIELDER]: 'bg-green-500', [POSITIONS.ATTACKER]: 'bg-red-500' };
+                let statusIcon = '';
+                if (player.injuryTurns > 0) {
+                    statusIcon = `<div class="status-icon bg-red-600" title="Lesionado por ${player.injuryTurns} rodada(s)">+</div>`;
+                } else if (player.isSuspended) {
+                    statusIcon = `<div class="status-icon bg-yellow-400" title="Suspenso">!</div>`;
+                }
+
+                return `<div class="player-marker p-1 ${isUnavailable ? 'opacity-70' : ''}" draggable="${!isUnavailable}" ondragstart="handleDragStart(event, '${player.id}')" ondragend="handleDragEnd(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, '${player.id}')">
+                            <div class="w-10 h-10 rounded-full ${posColors[player.position]} flex items-center justify-center font-bold text-lg mb-1">${player.skill}</div>
+                            <span class="player-name">${player.name.split(' ')[0]}</span>
+                            ${statusIcon}
+                        </div>`;
+            };
+
+            const startingXIPlayers = team.startingXI.map(getPlayerById);
+            const reservePlayers = team.reserves.map(getPlayerById).sort((a, b) => b.skill - a.skill);
+            const unavailablePlayers = team.players.filter(p => p.injuryTurns > 0 || p.isSuspended);
+
+            let fieldHtml = '<div class="center-circle"></div>';
+            const sectors = {
+                [POSITIONS.GOALKEEPER]: startingXIPlayers.filter(p => p && p.position === POSITIONS.GOALKEEPER),
+                [POSITIONS.DEFENDER]: startingXIPlayers.filter(p => p && p.position === POSITIONS.DEFENDER),
+                [POSITIONS.MIDFIELDER]: startingXIPlayers.filter(p => p && p.position === POSITIONS.MIDFIELDER),
+                [POSITIONS.ATTACKER]: startingXIPlayers.filter(p => p && p.position === POSITIONS.ATTACKER),
+            };
+            const sectorLayout = (players, top, height) => `<div class="absolute flex justify-around items-center w-full" style="top: ${top}; height: ${height};">${players.map(p => renderPlayerMarker(p)).join('')}</div>`;
+            fieldHtml += sectorLayout(sectors[POSITIONS.GOALKEEPER], '85%', '15%');
+            fieldHtml += sectorLayout(sectors[POSITIONS.DEFENDER], '65%', '20%');
+            fieldHtml += sectorLayout(sectors[POSITIONS.MIDFIELDER], '40%', '25%');
+            fieldHtml += sectorLayout(sectors[POSITIONS.ATTACKER], '15%', '25%');
+
+            const container = document.createElement('div');
+            container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
+            container.innerHTML = `
+                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4">
+                    <h2 class="text-2xl font-bold">Táticas e Escalação</h2>
+                    <div class="flex items-center space-x-4 mt-3 sm:mt-0">
+                        <select id="formation-select" onchange="changeFormation(this.value)" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+                            <option value="4-4-2" ${team.tactic === '4-4-2' ? 'selected' : ''}>4-4-2</option>
+                            <option value="4-3-3" ${team.tactic === '4-3-3' ? 'selected' : ''}>4-3-3</option>
+                            <option value="5-3-2" ${team.tactic === '5-3-2' ? 'selected' : ''}>5-3-2</option>
+                        </select>
+                        <button onclick="changeView('dashboard')" class="w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar</button>
+                    </div>
+                </div>
+                <div class="pitch w-full h-96 md:h-[500px] rounded-lg mb-4 overflow-hidden relative">${fieldHtml}</div>
+                <h3 class="text-xl font-bold mb-2">Banco de Reservas</h3>
+                <div class="p-2 bg-gray-200 rounded-lg flex flex-wrap gap-2 justify-center mb-4">${reservePlayers.map(p => renderPlayerMarker(p)).join('') || '<p class="text-gray-500">Nenhum jogador disponível no banco.</p>'}</div>
+                ${unavailablePlayers.length > 0 ? `<h3 class="text-xl font-bold mb-2">Indisponíveis</h3><div class="p-2 bg-red-100 rounded-lg flex flex-wrap gap-2 justify-center">${unavailablePlayers.map(p => renderPlayerMarker(p, true)).join('')}</div>` : ''}
+            `;
+            mainContent.appendChild(container);
+        }
+        
+        function renderLeagueTable() {
+            const sortedTable = [...gameState.leagueTable].sort((a, b) => {
+                if (b.points !== a.points) return b.points - a.points;
+                if (b.goalDifference !== a.goalDifference) return b.goalDifference - a.goalDifference;
+                if (b.goalsFor !== a.goalsFor) return b.goalsFor - a.goalsFor;
+                return a.teamName.localeCompare(b.teamName);
+            });
+            const container = document.createElement('div');
+            container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
+            container.innerHTML = `<div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4"><h2 class="text-2xl font-bold">Tabela do Campeonato</h2><button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button></div><div class="overflow-x-auto table-responsive rounded-lg border"><table class="min-w-full bg-white text-sm text-left"><thead class="bg-gray-200"><tr><th class="p-3 font-semibold text-center">#</th><th class="p-3 font-semibold">Time</th><th class="p-3 font-semibold text-center" title="Pontos">P</th><th class="p-3 font-semibold text-center" title="Jogos">J</th><th class="p-3 font-semibold text-center" title="Vitórias">V</th><th class="p-3 font-semibold text-center" title="Empates">E</th><th class="p-3 font-semibold text-center" title="Derrotas">D</th><th class="p-3 font-semibold text-center" title="Gols Pró">GP</th><th class="p-3 font-semibold text-center" title="Gols Contra">GC</th><th class="p-3 font-semibold text-center" title="Saldo de Gols">SG</th></tr></thead><tbody>${sortedTable.map((entry, index) => `<tr class="border-b ${entry.teamId === gameState.playerTeamId ? 'bg-blue-100 font-bold' : 'hover:bg-gray-50'}"><td class="p-3 text-center">${index + 1}</td><td class="p-3">${entry.teamName}</td><td class="p-3 text-center font-bold">${entry.points}</td><td class="p-3 text-center">${entry.played}</td><td class="p-3 text-center text-green-600">${entry.wins}</td><td class="p-3 text-center text-gray-500">${entry.draws}</td><td class="p-3 text-center text-red-600">${entry.losses}</td><td class="p-3 text-center">${entry.goalsFor}</td><td class="p-3 text-center">${entry.goalsAgainst}</td><td class="p-3 text-center">${entry.goalDifference}</td></tr>`).join('')}</tbody></table></div>`;
+            mainContent.appendChild(container);
+        }
+
+        function renderRoundResults() {
+            const playerTeamId = gameState.playerTeamId;
+            let eventsHTML = '';
+            const injuries = [];
+            const suspensions = [];
+
+            gameState.lastRoundResults.forEach(result => {
+                if(result.events) {
+                    result.events.injuries.forEach(e => { if(e.teamId === playerTeamId) injuries.push(e) });
+                    result.events.suspensions.forEach(e => { if(e.teamId === playerTeamId) suspensions.push(e) });
+                }
+            });
+
+            if (injuries.length > 0) {
+                eventsHTML += `<h3 class="text-lg font-bold mt-4 text-red-600">Jogadores Lesionados</h3><ul class="list-disc list-inside">${injuries.map(e => `<li>${e.name} (Fora por ${e.turns} rodada(s))</li>`).join('')}</ul>`;
+            }
+            if (suspensions.length > 0) {
+                eventsHTML += `<h3 class="text-lg font-bold mt-4 text-yellow-600">Jogadores Suspensos</h3><ul class="list-disc list-inside">${suspensions.map(e => `<li>${e.name}</li>`).join('')}</ul>`;
+            }
+
+            const container = document.createElement('div');
+            container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
+            container.innerHTML = `<h2 class="text-2xl font-bold mb-4 text-center">Resultados da Rodada ${gameState.currentRound - 1}</h2><div class="space-y-3">${gameState.lastRoundResults.map(result => { const homeTeam = gameState.teams.find(t => t.id === result.homeTeamId); const awayTeam = gameState.teams.find(t => t.id === result.awayTeamId); const isPlayerMatch = homeTeam.id === playerTeamId || awayTeam.id === playerTeamId; return `<div class="flex items-center justify-between p-3 rounded-lg ${isPlayerMatch ? 'bg-blue-100 border border-blue-200' : 'bg-gray-50'}"><span class="w-2/5 text-right truncate ${isPlayerMatch ? 'font-bold' : ''}">${homeTeam.name}</span><span class="mx-3 px-3 py-1 bg-gray-700 text-white rounded-md font-bold text-lg">${result.homeGoals} - ${result.awayGoals}</span><span class="w-2/5 text-left truncate ${isPlayerMatch ? 'font-bold' : ''}">${awayTeam.name}</span></div>` }).join('')}</div>${eventsHTML}<button onclick="changeView('dashboard')" class="w-full mt-6 p-3 bg-green-500 text-white rounded-lg font-bold hover:bg-green-600 transition shadow">Continuar</button>`;
+            mainContent.appendChild(container);
+        }
+
+        function renderEndOfSeason() {
+            const { improved, declined, retired } = gameState.endOfSeasonReport;
+            const renderList = (title, players, color) => {
+                if (players.length === 0) return '';
+                return `<div><h3 class="text-lg font-bold mb-2 text-${color}-600">${title}</h3><ul class="list-disc list-inside space-y-1">${players.map(p => `<li>${p.name} ${p.age ? `(Idade: ${p.age})` : ''} <span class="font-bold">${p.change || ''}</span></li>`).join('')}</ul></div>`;
+            };
+            const container = document.createElement('div');
+            container.className = "bg-white shadow-md rounded-lg p-6";
+            container.innerHTML = `<h2 class="text-2xl font-bold mb-4 text-center">Resumo da Temporada</h2><div class="space-y-6">${renderList('Jogadores que Evoluíram', improved, 'green')}${renderList('Jogadores que Regrediram', declined, 'yellow')}${renderList('Jogadores Aposentados', retired, 'red')}${improved.length === 0 && declined.length === 0 && retired.length === 0 ? '<p class="text-center text-gray-500">Nenhuma mudança significativa no seu elenco nesta temporada.</p>' : ''}</div><button onclick="startNewSeason()" class="w-full mt-8 p-3 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 transition shadow">Iniciar Nova Temporada</button>`;
+            mainContent.appendChild(container);
+        }
+
+        function renderTransfers() {
+            const playerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            const activeTab = gameState.transferMarket.activeTab;
+            const buyTabActive = activeTab === 'buy';
+            let tableContentHTML = '';
+            if (buyTabActive) {
+                const availablePlayers = gameState.teams.filter(t => t.id !== playerTeam.id).flatMap(t => t.players).sort((a,b) => b.skill - a.skill);
+                tableContentHTML = `<thead class="bg-gray-200"><tr><th class="p-3 font-semibold">Nome</th><th class="p-3 font-semibold">Pos.</th><th class="p-3 font-semibold text-center">Habil.</th><th class="p-3 font-semibold text-right">Valor</th><th class="p-3 font-semibold text-center">Ação</th></tr></thead><tbody>${availablePlayers.map(p => { const canAfford = playerTeam.cash >= p.value; return `<tr><td class="p-3 font-medium">${p.name}</td><td class="p-3">${p.position}</td><td class="p-3 text-center font-bold text-blue-600">${p.skill}</td><td class="p-3 text-right">R$ ${p.value.toLocaleString('pt-BR')}</td><td class="p-3 text-center"><button ${canAfford ? '' : 'disabled'} onclick="buyPlayer('${p.id}')" class="px-3 py-1 bg-green-500 text-white text-xs font-bold rounded hover:bg-green-600 transition disabled:opacity-50 disabled:cursor-not-allowed">Comprar</button></td></tr>` }).join('')}</tbody>`;
+            } else {
+                const sortedPlayers = [...playerTeam.players].sort((a,b) => b.value - a.value);
+                tableContentHTML = `<thead class="bg-gray-200"><tr><th class="p-3 font-semibold">Nome</th><th class="p-3 font-semibold">Pos.</th><th class="p-3 font-semibold text-center">Habil.</th><th class="p-3 font-semibold text-right">Valor</th><th class="p-3 font-semibold text-center">Ação</th></tr></thead><tbody>${sortedPlayers.map(p => `<tr><td class="p-3 font-medium">${p.name}</td><td class="p-3">${p.position}</td><td class="p-3 text-center font-bold text-blue-600">${p.skill}</td><td class="p-3 text-right">R$ ${p.value.toLocaleString('pt-BR')}</td><td class="p-3 text-center"><button onclick="sellPlayer('${p.id}')" class="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded hover:bg-red-600 transition">Vender</button></td></tr>`).join('')}</tbody>`;
+            }
+            const container = document.createElement('div');
+            container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
+            container.innerHTML = `<div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4"><h2 class="text-2xl font-bold">Mercado de Transferências</h2><button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button></div><div class="border-b border-gray-200 mb-4"><nav class="-mb-px flex space-x-6"><button onclick="changeView('transfers', {tab: 'buy'})" class="py-2 px-1 border-b-2 font-medium text-sm ${buyTabActive ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}">Comprar Jogadores</button><button onclick="changeView('transfers', {tab: 'sell'})" class="py-2 px-1 border-b-2 font-medium text-sm ${!buyTabActive ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}">Vender Jogadores</button></nav></div><div class="overflow-x-auto table-responsive rounded-lg border"><table class="min-w-full bg-white text-sm text-left">${tableContentHTML}</table></div>`;
+            mainContent.appendChild(container);
+        }
+
+        // --- GAME START ---
+        document.addEventListener('DOMContentLoaded', initGame);
+    </script>
+
+</body>
+</html>
