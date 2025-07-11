@@ -104,6 +104,12 @@
             color: white;
             border: 1px solid white;
         }
+        .morale-icon {
+             position: absolute;
+             top: -5px;
+             left: -5px;
+             font-size: 16px;
+        }
         .sortable {
             cursor: pointer;
         }
@@ -174,6 +180,8 @@
                 fixtures: [],
                 currentYear: 2025,
                 currentRound: 1,
+                                 t: 5,
+                         Players: [],
                 lastRoundResults: [],
                 view: 'team-selection',
                 transferMarket: { activeTab: 'buy' },
@@ -186,7 +194,8 @@
                     'transfers-buy': { key: 'skill', order: 'desc' },
                     'transfers-sell': { key: 'value', order: 'desc' },
                     scorers: { key: 'goals', order: 'desc' },
-                    academy: { key: 'skill', order: 'desc' }
+                    academy: { key: 'skill', order: 'desc' },
+                    morale: { key: 'name', order: 'asc' }
                 }
             };
         }
@@ -221,7 +230,7 @@
             const name = `${FIRST_NAMES[getRandomInt(0, FIRST_NAMES.length - 1)]} ${LAST_NAMES[getRandomInt(0, LAST_NAMES.length - 1)]}`;
             const age = isYouth ? getRandomInt(16, 18) : getRandomInt(18, 34);
             const skill = isYouth ? getRandomInt(30, 55) : getRandomInt(40, 85);
-            const player = { id: crypto.randomUUID(), name, age, position, skill, strength: getRandomInt(40, 85), value: getRandomInt(100, 5000) * 1000, teamId, injuryTurns: 0, isSuspended: false, salary: Math.floor(skill * 1000 + getRandomInt(500, 2000)), matchRatings: [] };
+            const player = { id: crypto.randomUUID(), name, age, position, skill, strength: getRandomInt(40, 85), value: getRandomInt(100, 5000) * 1000, teamId, injuryTurns: 0, isSuspended: false, salary: Math.floor(skill * 1000 + getRandomInt(500, 2000)), matchRatings: [], morale: 50, salaryAdjustedThisSeason: false };
             if (!isYouth) {
                 gameState.playerStats.push({ playerId: player.id, name: player.name, teamName: TEAM_NAMES[teamId], goals: 0 });
             }
@@ -305,6 +314,10 @@
             gameState.fixtures = [...fixtures, ...secondHalfFixtures];
         }
 
+        function getPlayerEffect                yer) {
+            const moraleBonus = (player.morale - 50)            / Fro            +5
+            return player.skill + morale                    }
+
         function getTeamStrength(teamId) {
             const team = gameState.teams.find(t => t.id === teamId);
             if (!team) return { attack: 0, defense: 0 };
@@ -312,7 +325,7 @@
             const getSectorStrength = (position) => {
                 const players = startingPlayers.filter(p => p.position === position);
                 if (players.length === 0) return 0;
-                return players.reduce((sum, p) => sum + p.skill, 0) / players.length;
+                return players.reduce((sum, p) => sum + getPlayerEffectiveSkill(p), 0) / players.length;
             };
             const gkStrength = getSectorStrength(POSITIONS.GOALKEEPER);
             const defStrength = getSectorStrength(POSITIONS.DEFENDER);
@@ -336,31 +349,39 @@
                 if (stat) {
                     stat.goals++;
                 } else {
-                    // Safeguard for players not in stats (e.g., promoted youth)
                     gameState.playerStats.push({ playerId: scorer.id, name: scorer.name, teamName: team.name, goals: 1 });
                 }
             }
         }
 
         function calculateMatchRatings(homeTeam, awayTeam, homeGoals, awayGoals) {
-            const playersInMatch = [...homeTeam.players.filter(p => homeTeam.startingXI.includes(p.id)), ...awayTeam.players.filter(p => awayTeam.startingXI.includes(p.id))];
+                          ho                s = h                players.filter(p => homeTeam.startingXI.includes(p.id) || homeTeam.reserves.                    d));
+            const awayPlayers = awayTeam.players.filter(p => awayTeam.startingXI.includes(p.id) || awayTeam.reserves.includes(p.id));
             
-            playersInMatch.forEach(player => {
-                let rating = 5.0;
-                rating += (player.skill - 60) / 10; // Base rating on skill
-
-                const isHomePlayer = player.teamId === homeTeam.id;
-                if ((isHomePlayer && homeGoals > awayGoals) || (!isHomePlayer && awayGoals > homeGoals)) {
-                    rating += 0.5; // Win bonus
-                } else if (homeGoals === awayGoals) {
-                    rating += 0.2; // Draw bonus
+            homePlayers.forEach(player => {
+                const played = homeTeam.startingXI.include;
+                if (played) {
+                    let rating = 5.0 + (player.skill - 60) / 10;
+                    if (homeGoals > awayGoals) rating += 0.5; else if (homeGoals < awayGoals) rating -= 0.3; else rating += 0.2;
+                    rating += (Math.random() - 0.5);
+                    player.matchRatings.push(parseFloat(Math.max(4.0, Math.min(10.0, rating)).toFixed(1)));
+                    player.morale = Math.min(100, player.morale + (homeGoals > awayGoals ? 5 : (homeGoals === awayGoals ? 1 : -5)));
                 } else {
-                    rating -= 0.3; // Loss penalty
+                    player.morale = Math.max(0, player.morale - 1);
                 }
+            });
 
-                rating += (Math.random() - 0.5); // Randomness
-                rating = Math.max(4.0, Math.min(10.0, rating)); // Clamp between 4 and 10
-                player.matchRatings.push(parseFloat(rating.toFixed(1)));
+            awayPlayers.forEach(player => {
+                const played = awayTeam.startingXI.includes(player.id);
+                if (played) {
+                    let rating = 5.0 + (player.skill - 60) / 10;
+                    if (awayGoals > homeGoals) rating += 0.5; else if (awayGoals < homeGoals) rating -= 0.3; else rating += 0.2;
+                    rating += (Math.random() - 0.5);
+                    player.matchRatings.push(parseFloat(Math.max(4.0, Math.min(10.0, rating)).toFixed(1)));
+                    player.morale = Math.min(100, player.morale + (awayGoals > homeGoals ? 5 : (awayGoals === homeGoals ? 1 : -5)));
+                } else {
+                    player.morale = Math.max(0, player.morale - 1);
+                }
             });
         }
 
@@ -409,7 +430,6 @@
             homeStats.goalDifference = homeStats.goalsFor - homeStats.goalsAgainst;
             awayStats.goalDifference = awayStats.goalsFor - awayStats.goalsAgainst;
             
-            // Ticket income for home team
             const stadium = STADIUM_DATA[homeTeam.stadiumLevel - 1];
             const ticketIncome = Math.floor(stadium.capacity * stadium.ticketPrice * (0.6 + Math.random() * 0.4));
             homeTeam.cash += ticketIncome;
@@ -458,6 +478,8 @@
                 });
                 setInitialLineup(team);
             });
+            gameState.conversationsLeft = 5;
+            gameState.talkedToPlayers = [];
         }
 
         function simulateRound() {
@@ -487,7 +509,7 @@
         
         function calculateIndividualAwards() {
             const allPlayers = gameState.teams.flatMap(t => t.players);
-            const minGames = gameState.fixtures.length / 2; // Must play at least half the season
+            const minGames = gameState.fixtures.length / 2;
 
             const getAverageRating = (player) => {
                 if (!player || !player.matchRatings || player.matchRatings.length === 0) return 0;
@@ -496,20 +518,16 @@
 
             const eligiblePlayers = allPlayers.filter(p => p.matchRatings && p.matchRatings.length >= minGames);
 
-            // Golden Boot
             const topScorer = [...gameState.playerStats].sort((a, b) => b.goals - a.goals)[0];
 
-            // Golden Glove
             const bestGoalkeeper = eligiblePlayers
                 .filter(p => p.position === POSITIONS.GOALKEEPER)
                 .sort((a, b) => getAverageRating(b) - getAverageRating(a))[0];
 
-            // Player of the Season
             const bestPlayer = eligiblePlayers
                 .filter(p => p.position !== POSITIONS.GOALKEEPER)
                 .sort((a, b) => getAverageRating(b) - getAverageRating(a))[0];
             
-            // Team of the Season
             const teamOfTheSeason = {};
             for (const pos of Object.values(POSITIONS)) {
                 teamOfTheSeason[pos] = eligiblePlayers
@@ -558,7 +576,9 @@
                 team.players.forEach(player => {
                     const originalSkill = player.skill;
                     player.age++;
-                    player.matchRatings = []; // Reset for new season
+                    player.matchRatings = [];
+                    player.morale = 50 + getRandomInt(-10, 10);
+                    player.salaryAdjustedThisSeason = false;
                     if (player.age >= 36 && Math.random() < 0.25) {
                         retiredPlayers.push(player.id);
                         if (team.id === gameState.playerTeamId) report.retired.push({ name: player.name, age: player.age });
@@ -770,6 +790,48 @@
             }
         }
 
+        function talkToPlayer(playerId) {
+            if (gam                    ionsLeft <=                               showN            ion("Você não tem mais conversas di                sta rodada.", "error");
+                                         }
+            if (gameState.talkedToPlayers.includes(playerId)) {
+                                tion("Voc                ou                 ador nesta rodada.", "info");
+                return                    
+
+            const player = gameState.teams.find(t => t.id === gameState.pla                    rs.find(p                 play                        if (player) {
+                if (Math.random() < 0.65) {
+                    player.morale = Math.min(                morale + 15);
+                        showNotification(`A conve                        e} foi produtiva!`, "success");
+                } e                               showNotification(`A conversa com ${player.name} não surtiu efeito.`, "i                            }                        eState.conversationsLeft--;
+                gameState.talkedToPlayers.push(pla                                           
+            }
+        }
+
+                       justSalary(playerId) {
+            const t                    teams.find(                = g            .play            );
+            const player = team                d(p => p.id === playerId);
+            if (!player) return;
+
+                          .salaryAdjustedThisSeason) {
+                showNotificat                io deste jogador já foi                 esta temporada.", "info");
+                                         }
+            if (player.morale > 70) {
+                showNotification(`${pl                    tá feliz,                sár                o.`, "info");
+                                         }
+
+            const raiseAmount = Math.ceil(player.salary * 0.1);
+                              t = raise                
+
+                 f (team.cash < bonusCost) {
+                showNoti                nheiro insuficiente para pagar o bônus                 (R$ ${bonusCost.toLocaleString                    error");
+                return;
+            }
+
+            team.cash -= bonusCost;
+            player.salary += raiseAmou                     player.m                
+                    er.salaryAdjustedThisSeas                            showNotification(`S                player.name} reajusta                 mais feliz.`, "success");
+            render();
+        }
+
         function startNewGameFlow() {
             gameState.teams = [];
             gameState.playerStats = [];
@@ -874,6 +936,7 @@
                 case 'statistics': renderStatistics(); break;
                 case 'academy': renderAcademy(); break;
                 case 'stadium': renderStadium(); break;
+                case 'morale': renderTeamMorale(); break;
                 default: renderTeamSelection();
             }
             if (gameState.playerTeamId !== null) {
@@ -923,7 +986,7 @@
             container.innerHTML = `
                 <h2 class="text-2xl font-bold mb-4">Painel Principal</h2>
                 <p>Bem-vindo, técnico! O que você gostaria de fazer?</p>
-                <div class="mt-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 text-white">
+                <div class="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-white">
                     <button onclick="changeView('tactics')" class="p-4 bg-blue-500 rounded-lg font-semibold hover:bg-blue-600 transition shadow">Elenco/Táticas</button>
                     <button onclick="changeView('league')" class="p-4 bg-green-500 rounded-lg font-semibold hover:bg-green-600 transition shadow">Campeonato</button>
                     <button onclick="changeView('transfers')" class="p-4 bg-yellow-500 rounded-lg font-semibold hover:bg-yellow-600 transition shadow">Mercado</button>
@@ -931,6 +994,7 @@
                     <button onclick="changeView('statistics')" class="p-4 bg-purple-500 rounded-lg font-semibold hover:bg-purple-600 transition shadow">Estatísticas</button>
                     <button onclick="changeView('academy')" class="p-4 bg-teal-500 rounded-lg font-semibold hover:bg-teal-600 transition shadow">Academia</button>
                     <button onclick="changeView('stadium')" class="p-4 bg-orange-500 rounded-lg font-semibold hover:bg-orange-600 transition shadow">Estádio</button>
+                    <button onclick="changeView('morale')" class="p-4 bg-pink-500 rounded-lg font-semibold hover:bg-pink-600 transition shadow">Moral do Time</button>
                 </div>
                 <div class="mt-8 p-4 bg-gray-50 rounded-lg border">
                     <h3 class="font-bold text-lg mb-2 text-center">Próxima Partida (Rodada ${isEndOfSeason ? gameState.fixtures.length : gameState.currentRound})</h3>
@@ -947,14 +1011,20 @@
             const renderPlayerMarker = (player, isUnavailable = false) => {
                 if (!player) return '';
                 const posColors = { [POSITIONS.GOALKEEPER]: 'bg-yellow-500', [POSITIONS.DEFENDER]: 'bg-blue-500', [POSITIONS.MIDFIELDER]: 'bg-green-500', [POSITIONS.ATTACKER]: 'bg-red-500' };
+                
                 let statusIcon = '';
                 if (player.injuryTurns > 0) {
                     statusIcon = `<div class="status-icon bg-red-600" title="Lesionado por ${player.injuryTurns} rodada(s)">+</div>`;
                 } else if (player.isSuspended) {
                     statusIcon = `<div class="status-icon bg-yellow-400" title="Suspenso">!</div>`;
                 }
+                
+                let moraleIcon = '';
+                if (player.morale > 70) moraleIcon = `<div cl" title="Feliz">😊</div>`;
+                else if (player.morale < 30) moraleIcon = `<div class="morale-icon" title="Infieliz">😠</div>`;
 
                 return `<div class="player-marker p-1 ${isUnavailable ? 'opacity-70' : ''}" draggable="${!isUnavailable}" ondragstart="handleDragStart(event, '${player.id}')" ondragend="handleDragEnd(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, '${player.id}')">
+                            ${moraleIcon}
                             <div class="w-10 h-10 rounded-full ${posColors[player.position]} flex items-center justify-center font-bold text-lg mb-1">${player.skill}</div>
                             <span class="player-name">${player.name.split(' ')[0]}</span>
                             ${statusIcon}
@@ -1006,18 +1076,23 @@
 
             const container = document.createElement('div');
             container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
-            container.innerHTML = `<div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4"><h2 class="text-2xl font-bold">Tabela do Campeonato</h2><button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button></div><div class="overflow-x-auto table-responsive rounded-lg border"><table class="min-w-full bg-white text-sm text-left"><thead class="bg-gray-200"><tr>
-                <th class="p-3 font-semibold text-center sortable" onclick="handleSort('league', 'position')"># ${getSortIcon('league', 'position')}</th>
-                <th class="p-3 font-semibold sortable" onclick="handleSort('league', 'teamName')">Time ${getSortIcon('league', 'teamName')}</th>
-                <th class="p-3 font-semibold text-center sortable" onclick="handleSort('league', 'points')" title="Pontos">P ${getSortIcon('league', 'points')}</th>
-                <th class="p-3 font-semibold text-center sortable" onclick="handleSort('league', 'played')" title="Jogos">J ${getSortIcon('league', 'played')}</th>
-                <th class="p-3 font-semibold text-center sortable" onclick="handleSort('league', 'wins')" title="Vitórias">V ${getSortIcon('league', 'wins')}</th>
-                <th class="p-3 font-semibold text-center sortable" onclick="handleSort('league', 'draws')" title="Empates">E ${getSortIcon('league', 'draws')}</th>
-                <th class="p-3 font-semibold text-center sortable" onclick="handleSort('league', 'losses')" title="Derrotas">D ${getSortIcon('league', 'losses')}</th>
-                <th class="p-3 font-semibold text-center sortable" onclick="handleSort('league', 'goalsFor')" title="Gols Pró">GP ${getSortIcon('league', 'goalsFor')}</th>
-                <th class="p-3 font-semibold text-center sortable" onclick="handleSort('league', 'goalsAgainst')" title="Gols Contra">GC ${getSortIcon('league', 'goalsAgainst')}</th>
-                <th class="p-3 font-semibold text-center sortable" onclick="handleSort('league', 'goalDifference')" title="Saldo de Gols">SG ${getSortIcon('league', 'goalDifference')}</th>
-            </tr></thead><tbody>${sortedTable.map((entry, index) => `<tr class="border-b hover:bg-gray-50 ${entry.teamId === gameState.playerTeamId ? 'bg-blue-100 font-bold' : ''}"><td class="p-3 text-center">${index + 1}</td><td class="p-3">${entry.teamName}</td><td class="p-3 text-center font-bold">${entry.points}</td><td class="p-3 text-center">${entry.played}</td><td class="p-3 text-center text-green-600">${entry.wins}</td><td class="p-3 text-center text-gray-500">${entry.draws}</td><td class="p-3 text-center text-red-600">${entry.losses}</td><td class="p-3 text-center">${entry.goalsFor}</td><td class="p-3 text-center">${entry.goalsAgainst}</td><td class="p-3 text-center">${entry.goalDifference}</td></tr>`).join('')}</tbody></table></div>`;
+            container.innerHTML = `<div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4"><h2 class="text-2xl font-bold">Tabela do Campeonato</h2><button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button></div>${renderTable('league', 
+                [
+                    { header: '#', key: 'position', sortable: false },
+                    { hader: 'Time', key: 'teamName' },
+                    { header: 'P', key: 'points', class: 'text-center' },
+                    { header: 'J', key: 'played', class: 'text-center' },
+                    { header: 'V', key: 'wins', class: 'text-center' },
+                    { header: 'E', key: 'draws', class: 'text-center' },
+                    { header: 'D', key: 'losses', class: 'text-center' },
+                    { header: 'GP', key: 'goalsFor', class: 'text-center' },
+                    { header: 'GC', key: 'goalsAgainst', class: 'text-center' },
+                    { header: 'SG', key: 'goalDifference', class: 'text-center' }
+                ],
+                sortedTable.map((entry, index) => ({...entry, position: index + 1})),
+                null,
+                (row) => row.teamId === gameState.playerTea mId ? 'bg-blue-100 font-bold'  : ''
+            )}`;
             mainContent.appendChild(container);
         }
 
@@ -1343,7 +1418,7 @@
             mainContent.appendChild(container);
         }
         
-        function renderTable(viewKey, columns, data, actionRenderer = null) {
+        function renderTable(viewKey, columns, data, actionRenderer = null, rowClassRenderer = null) {
             const headerHTML = columns.map(col => {
                 const sortable = col.sortable !== false;
                 return `<th class="p-3 font-semibold ${col.class || ''} ${sortable ? 'sortable' : ''}" ${sortable ? `onclick="handleSort('${viewKey}', '${col.key}')"` : ''}>
@@ -1360,9 +1435,15 @@
                     if (col.format === 'currency') {
                         cellValue = `R$ ${cellValue.toLocaleString('pt-BR')}`;
                     }
+                    if (col.format === 'morale') {
+                        if (cellValue > 70) return `<td class="p-3 ${col.class || ''}"><span class="text-green-600 font-semibold">Feliz 😊</span></td>`;
+                        if (cellValue < 30) return `<td class="p-3 ${col.class || ''}"><span class="text-red-600 font-semibold">Infieliz 😠</span></td>`;
+                        return `<td class="p-3 ${col.class || ''}"><span class="text-gray-600">Neutro 😐</span></td>`;
+                    }
                     return `<td class="p-3 ${col.class || ''}">${cellValue}</td>`;
                 }).join('');
-                return `<tr class="border-b hover:bg-gray-50">${rowHTML}</tr>`;
+                const rowClass = rowClassRenderer ? rowClassRenderer(row) : '';
+                return `<tr class="border-b hover:bg-gray-50 ${rowClass}">${rowHTML}</tr>`;
             }).join('');
             
             if(data.length === 0) {
@@ -1375,6 +1456,43 @@
                             <tbody>${bodyHTML}</tbody>
                         </table>
                     </div>`;
+        }
+
+        function renderTeamMorale() {
+            const team = gameState.teams.find(t => t.id === gameS            yerTe                        const { key, order                 e.sorting.morale;
+            const sortedPlayers = sortData(team.players                );
+
+            const container = document.creat                v');
+            container.className = "bg-white shadow-md r                4 sm:p-6";
+            container.innerHTML = `
+                    <div class="flex flex-col sm:flex-row sm:justify-between sm:item                6">
+                    <h2 class="text-2xl font-bold">Moral do Time</h2>
+                    <button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button>
+                </div>
+                <div class="mb-4 p-2 bg-gray-100 rounded-lg text-center">
+                    <p>Conversas disponíveis nesta rodada: <span class="font-bold text-blue-600">${gameState.conversationsLeft}</span></p>
+                </div>
+                ${renderTable('morale',
+                    [
+                        { header: 'Nome', key: 'name' },
+                        { header: 'Moral', key: 'morale', format: 'morale', class: 'text-center' },
+                        { header: 'Ação', key: 'action', class: 'text-center' }
+                    ],
+                    sortedPlayers,
+                    (p) => {
+                        const talked = gameState.talkedToPlayers.includes(p.id);
+                        const cantTalk = talked || gameState.conversationsLeft <= 0;
+                        const cantAdjust = p.salaryAdjustedThisSeason || p.morale > 70;
+                        return `
+                            <div class="flex justify-center items-center space-x-2">
+                                <button onclick="talkToPlayer('${p.id}')" class="px-3 py-1 bg-blue-500 text-white text-xs font-bold rounded hover:bg-blue-600 transition disabled:opacity-50 disabled:cursor-not-allowed" ${cantTalk ? 'disabled' : ''}>Conversar</button>
+                                <button onclick="adjustSalary('${p.id}')" class="px-3 py-1 bg-green-500 text-white text-xs font-bold rounded hover:bg-green-600 transition disabled:opacity-50 disabled:cursor-not-allowed" ${cantAdjust ? 'disabled' : ''}>Reajustar Salário</button>
+                            </div>
+                        `;
+                    }
+                )}
+            `;
+            mainContent.appendChild(container);
         }
 
         // --- GAME START ---
