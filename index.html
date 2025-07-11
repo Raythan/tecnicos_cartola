@@ -150,7 +150,14 @@
         const MIN_SQUAD_SIZE = 18;
         const MIN_GOALKEEPERS = 2;
         const PRIZE_MONEY = { WIN: 50000, DRAW: 15000 };
-        const ACADEMY_UPGRADE_COST = [0, 1000000, 2500000, 5000000, 10000000]; // cost for level 2, 3, 4, 5
+        const ACADEMY_UPGRADE_COST = [0, 1000000, 2500000, 5000000, 10000000];
+        const STADIUM_DATA = [
+            { level: 1, capacity: 10000, ticketPrice: 20, upgradeCost: 2000000 },
+            { level: 2, capacity: 15000, ticketPrice: 25, upgradeCost: 5000000 },
+            { level: 3, capacity: 25000, ticketPrice: 30, upgradeCost: 10000000 },
+            { level: 4, capacity: 40000, ticketPrice: 35, upgradeCost: 25000000 },
+            { level: 5, capacity: 60000, ticketPrice: 40, upgradeCost: 0 },
+        ];
         const SAVE_KEY = 'tecnicosCartolaSave';
 
         // --- GAME STATE ---
@@ -233,7 +240,7 @@
                 youthPlayers.push(generatePlayer(id, pos, true));
             }
 
-            const team = { id, name, players, cash: getRandomInt(5, 15) * 1000000, tactic: '4-4-2', startingXI: [], reserves: [], seasonIncome: 0, youthAcademyLevel: 1, youthPlayers };
+            const team = { id, name, players, cash: getRandomInt(5, 15) * 1000000, tactic: '4-4-2', startingXI: [], reserves: [], seasonIncome: {prizes: 0, tickets: 0}, youthAcademyLevel: 1, youthPlayers, stadiumLevel: 1 };
             setInitialLineup(team);
             return team;
         }
@@ -373,20 +380,26 @@
             homeStats.goalDifference = homeStats.goalsFor - homeStats.goalsAgainst;
             awayStats.goalDifference = awayStats.goalsFor - awayStats.goalsAgainst;
             
+            // Ticket income for home team
+            const stadium = STADIUM_DATA[homeTeam.stadiumLevel - 1];
+            const ticketIncome = Math.floor(stadium.capacity * stadium.ticketPrice * (0.6 + Math.random() * 0.4));
+            homeTeam.cash += ticketIncome;
+            homeTeam.seasonIncome.tickets += ticketIncome;
+
             if (result.homeGoals > result.awayGoals) {
                 homeStats.wins++; homeStats.points += 3; awayStats.losses++;
                 homeTeam.cash += PRIZE_MONEY.WIN;
-                homeTeam.seasonIncome += PRIZE_MONEY.WIN;
+                homeTeam.seasonIncome.prizes += PRIZE_MONEY.WIN;
             } else if (result.awayGoals > result.homeGoals) {
                 awayStats.wins++; awayStats.points += 3; homeStats.losses++;
                 awayTeam.cash += PRIZE_MONEY.WIN;
-                awayTeam.seasonIncome += PRIZE_MONEY.WIN;
+                awayTeam.seasonIncome.prizes += PRIZE_MONEY.WIN;
             } else {
                 homeStats.draws++; awayStats.draws++; homeStats.points++; awayStats.points++;
                 homeTeam.cash += PRIZE_MONEY.DRAW;
                 awayTeam.cash += PRIZE_MONEY.DRAW;
-                homeTeam.seasonIncome += PRIZE_MONEY.DRAW;
-                awayTeam.seasonIncome += PRIZE_MONEY.DRAW;
+                homeTeam.seasonIncome.prizes += PRIZE_MONEY.DRAW;
+                awayTeam.seasonIncome.prizes += PRIZE_MONEY.DRAW;
             }
         }
 
@@ -500,7 +513,7 @@
                     const pos = [POSITIONS.DEFENDER, POSITIONS.MIDFIELDER, POSITIONS.ATTACKER][getRandomInt(0, 2)];
                     team.players.push(generatePlayer(team.id, pos));
                 }
-                team.seasonIncome = 0;
+                team.seasonIncome = {prizes: 0, tickets: 0};
             });
             gameState.endOfSeasonReport = report;
         }
@@ -648,6 +661,23 @@
                 showNotification("Dinheiro insuficiente para melhorar a academia.", "error");
             }
         }
+        
+        function upgradeStadium() {
+            const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            if (team.stadiumLevel >= 5) {
+                showNotification("Seu estádio já está no nível máximo!", "info");
+                return;
+            }
+            const cost = STADIUM_DATA[team.stadiumLevel - 1].upgradeCost;
+            if (team.cash >= cost) {
+                team.cash -= cost;
+                team.stadiumLevel++;
+                showNotification(`Estádio melhorado para o nível ${team.stadiumLevel}!`, "success");
+                render();
+            } else {
+                showNotification("Dinheiro insuficiente para melhorar o estádio.", "error");
+            }
+        }
 
         function promoteYouthPlayer(playerId) {
             const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
@@ -766,6 +796,7 @@
                 case 'finances': renderFinances(); break;
                 case 'statistics': renderStatistics(); break;
                 case 'academy': renderAcademy(); break;
+                case 'stadium': renderStadium(); break;
                 default: renderTeamSelection();
             }
             if (gameState.playerTeamId !== null) {
@@ -822,6 +853,7 @@
                     <button onclick="changeView('finances')" class="p-4 bg-indigo-500 rounded-lg font-semibold hover:bg-indigo-600 transition shadow">Finanças</button>
                     <button onclick="changeView('statistics')" class="p-4 bg-purple-500 rounded-lg font-semibold hover:bg-purple-600 transition shadow">Estatísticas</button>
                     <button onclick="changeView('academy')" class="p-4 bg-teal-500 rounded-lg font-semibold hover:bg-teal-600 transition shadow">Academia</button>
+                    <button onclick="changeView('stadium')" class="p-4 bg-orange-500 rounded-lg font-semibold hover:bg-orange-600 transition shadow">Estádio</button>
                 </div>
                 <div class="mt-8 p-4 bg-gray-50 rounded-lg border">
                     <h3 class="font-bold text-lg mb-2 text-center">Próxima Partida (Rodada ${isEndOfSeason ? gameState.fixtures.length : gameState.currentRound})</h3>
@@ -975,6 +1007,7 @@
             const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
             const { key, order } = gameState.sorting.finances;
             const sortedPlayers = sortData(team.players, key, order);
+            const totalIncome = team.seasonIncome.prizes + team.seasonIncome.tickets;
 
             const container = document.createElement('div');
             container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
@@ -994,28 +1027,22 @@
                     </div>
                     <div class="bg-green-100 p-4 rounded-lg">
                         <h3 class="text-lg font-semibold text-green-800">Receita da Temporada</h3>
-                        <p class="text-3xl font-bold text-green-700">R$ ${team.seasonIncome.toLocaleString('pt-BR')}</p>
+                        <p class="text-3xl font-bold text-green-700">R$ ${totalIncome.toLocaleString('pt-BR')}</p>
+                        <p class="text-sm text-green-600">(Prêmios: R$ ${team.seasonIncome.prizes.toLocaleString('pt-BR')})</p>
+                        <p class="text-sm text-green-600">(Ingressos: R$ ${team.seasonIncome.tickets.toLocaleString('pt-BR')})</p>
                     </div>
                 </div>
                 <h3 class="text-xl font-bold mt-8 mb-2">Folha Salarial Detalhada</h3>
                 <div class="overflow-x-auto table-responsive rounded-lg border">
-                    <table class="min-w-full bg-white text-sm text-left">
-                        <thead class="bg-gray-200"><tr>
-                            <th class="p-3 font-semibold sortable" onclick="handleSort('finances', 'name')">Nome ${getSortIcon('finances', 'name')}</th>
-                            <th class="p-3 font-semibold sortable" onclick="handleSort('finances', 'age')">Idade ${getSortIcon('finances', 'age')}</th>
-                            <th class="p-3 font-semibold text-center sortable" onclick="handleSort('finances', 'skill')">Habil. ${getSortIcon('finances', 'skill')}</th>
-                            <th class="p-3 font-semibold text-right sortable" onclick="handleSort('finances', 'salary')">Salário Mensal ${getSortIcon('finances', 'salary')}</th>
-                        </tr></thead>
-                        <tbody>
-                            ${sortedPlayers.map(p => `
-                                <tr class="border-b hover:bg-gray-50">
-                                    <td class="p-3 font-medium">${p.name}</td>
-                                    <td class="p-3">${p.age}</td>
-                                    <td class="p-3 text-center font-bold text-blue-600">${p.skill}</td>
-                                    <td class="p-3 text-right">R$ ${p.salary.toLocaleString('pt-BR')}</td>
-                                </tr>`).join('')}
-                        </tbody>
-                    </table>
+                    ${renderTable('finances', 
+                        [
+                            { header: 'Nome', key: 'name' },
+                            { header: 'Idade', key: 'age' },
+                            { header: 'Habil.', key: 'skill', class: 'text-center' },
+                            { header: 'Salário Mensal', key: 'salary', class: 'text-right', format: 'currency' }
+                        ],
+                        sortedPlayers
+                    )}
                 </div>
             `;
             mainContent.appendChild(container);
@@ -1030,24 +1057,14 @@
             if (scorersTabActive) {
                 const { key, order } = gameState.sorting.scorers;
                 const sortedScorers = sortData(gameState.playerStats, key, order).filter(p => p.goals > 0);
-                contentHTML = `
-                    <div class="overflow-x-auto table-responsive rounded-lg border">
-                        <table class="min-w-full bg-white text-sm text-left">
-                            <thead class="bg-gray-200"><tr>
-                                <th class="p-3 font-semibold sortable" onclick="handleSort('scorers', 'name')">Jogador ${getSortIcon('scorers', 'name')}</th>
-                                <th class="p-3 font-semibold sortable" onclick="handleSort('scorers', 'teamName')">Time ${getSortIcon('scorers', 'teamName')}</th>
-                                <th class="p-3 font-semibold text-center sortable" onclick="handleSort('scorers', 'goals')">Gols ${getSortIcon('scorers', 'goals')}</th>
-                            </tr></thead>
-                            <tbody>
-                                ${sortedScorers.map(p => `
-                                    <tr class="border-b hover:bg-gray-50">
-                                        <td class="p-3 font-medium">${p.name}</td>
-                                        <td class="p-3">${p.teamName}</td>
-                                        <td class="p-3 text-center font-bold">${p.goals}</td>
-                                    </tr>`).join('')}
-                            </tbody>
-                        </table>
-                    </div>`;
+                contentHTML = renderTable('scorers',
+                    [
+                        { header: 'Jogador', key: 'name' },
+                        { header: 'Time', key: 'teamName' },
+                        { header: 'Gols', key: 'goals', class: 'text-center' }
+                    ],
+                    sortedScorers
+                );
             } else { // History tab
                 contentHTML = `
                     <div class="overflow-x-auto table-responsive rounded-lg border">
@@ -1108,29 +1125,17 @@
                 </div>
 
                 <h3 class="text-xl font-bold mt-8 mb-2">Jovens Talentos</h3>
-                <div class="overflow-x-auto table-responsive rounded-lg border">
-                    <table class="min-w-full bg-white text-sm text-left">
-                        <thead class="bg-gray-200"><tr>
-                            <th class="p-3 font-semibold sortable" onclick="handleSort('academy', 'name')">Nome ${getSortIcon('academy', 'name')}</th>
-                            <th class="p-3 font-semibold sortable" onclick="handleSort('academy', 'age')">Idade ${getSortIcon('academy', 'age')}</th>
-                            <th class="p-3 font-semibold sortable" onclick="handleSort('academy', 'position')">Pos. ${getSortIcon('academy', 'position')}</th>
-                            <th class="p-3 font-semibold text-center sortable" onclick="handleSort('academy', 'skill')">Habil. ${getSortIcon('academy', 'skill')}</th>
-                            <th class="p-3 font-semibold text-center">Ação</th>
-                        </tr></thead>
-                        <tbody>
-                            ${sortedYouth.length > 0 ? sortedYouth.map(p => `
-                                <tr class="border-b hover:bg-gray-50">
-                                    <td class="p-3 font-medium">${p.name}</td>
-                                    <td class="p-3">${p.age}</td>
-                                    <td class="p-3">${p.position}</td>
-                                    <td class="p-3 text-center font-bold text-blue-600">${p.skill}</td>
-                                    <td class="p-3 text-center">
-                                        <button onclick="promoteYouthPlayer('${p.id}')" class="px-3 py-1 bg-blue-500 text-white text-xs font-bold rounded hover:bg-blue-600 transition">Promover</button>
-                                    </td>
-                                </tr>`).join('') : '<tr><td colspan="5" class="p-4 text-center text-gray-500">Nenhum jovem na academia no momento.</td></tr>'}
-                        </tbody>
-                    </table>
-                </div>
+                ${renderTable('academy',
+                    [
+                        { header: 'Nome', key: 'name' },
+                        { header: 'Idade', key: 'age' },
+                        { header: 'Pos.', key: 'position' },
+                        { header: 'Habil.', key: 'skill', class: 'text-center' },
+                        { header: 'Ação', key: 'action', class: 'text-center' }
+                    ],
+                    sortedYouth,
+                    (p) => `<button onclick="promoteYouthPlayer('${p.id}')" class="px-3 py-1 bg-blue-500 text-white text-xs font-bold rounded hover:bg-blue-600 transition">Promover</button>`
+                )}
             `;
             mainContent.appendChild(container);
         }
@@ -1145,31 +1150,119 @@
                 const viewKey = 'transfers-buy';
                 const { key, order } = gameState.sorting[viewKey];
                 const availablePlayers = sortData(gameState.teams.filter(t => t.id !== playerTeam.id).flatMap(t => t.players), key, order);
-                tableContentHTML = `<thead class="bg-gray-200"><tr>
-                    <th class="p-3 font-semibold sortable" onclick="handleSort('${viewKey}', 'name')">Nome ${getSortIcon(viewKey, 'name')}</th>
-                    <th class="p-3 font-semibold sortable" onclick="handleSort('${viewKey}', 'position')">Pos. ${getSortIcon(viewKey, 'position')}</th>
-                    <th class="p-3 font-semibold text-center sortable" onclick="handleSort('${viewKey}', 'skill')">Habil. ${getSortIcon(viewKey, 'skill')}</th>
-                    <th class="p-3 font-semibold text-right sortable" onclick="handleSort('${viewKey}', 'salary')">Salário ${getSortIcon(viewKey, 'salary')}</th>
-                    <th class="p-3 font-semibold text-right sortable" onclick="handleSort('${viewKey}', 'value')">Valor ${getSortIcon(viewKey, 'value')}</th>
-                    <th class="p-3 font-semibold text-center">Ação</th>
-                </tr></thead><tbody>${availablePlayers.map(p => { const canAfford = playerTeam.cash >= p.value; return `<tr class="border-b hover:bg-gray-50"><td class="p-3 font-medium">${p.name}</td><td class="p-3">${p.position}</td><td class="p-3 text-center font-bold text-blue-600">${p.skill}</td><td class="p-3 text-right">R$ ${p.salary.toLocaleString('pt-BR')}</td><td class="p-3 text-right">R$ ${p.value.toLocaleString('pt-BR')}</td><td class="p-3 text-center"><button ${canAfford ? '' : 'disabled'} onclick="buyPlayer('${p.id}')" class="px-3 py-1 bg-green-500 text-white text-xs font-bold rounded hover:bg-green-600 transition disabled:opacity-50 disabled:cursor-not-allowed">Comprar</button></td></tr>` }).join('')}</tbody>`;
+                tableContentHTML = renderTable(viewKey,
+                    [
+                        { header: 'Nome', key: 'name' },
+                        { header: 'Pos.', key: 'position' },
+                        { header: 'Habil.', key: 'skill', class: 'text-center' },
+                        { header: 'Salário', key: 'salary', class: 'text-right', format: 'currency' },
+                        { header: 'Valor', key: 'value', class: 'text-right', format: 'currency' },
+                        { header: 'Ação', key: 'action', class: 'text-center' }
+                    ],
+                    availablePlayers,
+                    (p) => `<button ${playerTeam.cash >= p.value ? '' : 'disabled'} onclick="buyPlayer('${p.id}')" class="px-3 py-1 bg-green-500 text-white text-xs font-bold rounded hover:bg-green-600 transition disabled:opacity-50 disabled:cursor-not-allowed">Comprar</button>`
+                );
             } else {
                 const viewKey = 'transfers-sell';
                 const { key, order } = gameState.sorting[viewKey];
                 const sortedPlayers = sortData(playerTeam.players, key, order);
-                tableContentHTML = `<thead class="bg-gray-200"><tr>
-                    <th class="p-3 font-semibold sortable" onclick="handleSort('${viewKey}', 'name')">Nome ${getSortIcon(viewKey, 'name')}</th>
-                    <th class="p-3 font-semibold sortable" onclick="handleSort('${viewKey}', 'position')">Pos. ${getSortIcon(viewKey, 'position')}</th>
-                    <th class="p-3 font-semibold text-center sortable" onclick="handleSort('${viewKey}', 'skill')">Habil. ${getSortIcon(viewKey, 'skill')}</th>
-                    <th class="p-3 font-semibold text-right sortable" onclick="handleSort('${viewKey}', 'salary')">Salário ${getSortIcon(viewKey, 'salary')}</th>
-                    <th class="p-3 font-semibold text-right sortable" onclick="handleSort('${viewKey}', 'value')">Valor ${getSortIcon(viewKey, 'value')}</th>
-                    <th class="p-3 font-semibold text-center">Ação</th>
-                </tr></thead><tbody>${sortedPlayers.map(p => `<tr class="border-b hover:bg-gray-50"><td class="p-3 font-medium">${p.name}</td><td class="p-3">${p.position}</td><td class="p-3 text-center font-bold text-blue-600">${p.skill}</td><td class="p-3 text-right">R$ ${p.salary.toLocaleString('pt-BR')}</td><td class="p-3 text-right">R$ ${p.value.toLocaleString('pt-BR')}</td><td class="p-3 text-center"><button onclick="sellPlayer('${p.id}')" class="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded hover:bg-red-600 transition">Vender</button></td></tr>`).join('')}</tbody>`;
+                tableContentHTML = renderTable(viewKey,
+                    [
+                        { header: 'Nome', key: 'name' },
+                        { header: 'Pos.', key: 'position' },
+                        { header: 'Habil.', key: 'skill', class: 'text-center' },
+                        { header: 'Salário', key: 'salary', class: 'text-right', format: 'currency' },
+                        { header: 'Valor', key: 'value', class: 'text-right', format: 'currency' },
+                        { header: 'Ação', key: 'action', class: 'text-center' }
+                    ],
+                    sortedPlayers,
+                    (p) => `<button onclick="sellPlayer('${p.id}')" class="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded hover:bg-red-600 transition">Vender</button>`
+                );
             }
             const container = document.createElement('div');
             container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
-            container.innerHTML = `<div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4"><h2 class="text-2xl font-bold">Mercado de Transferências</h2><button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button></div><div class="border-b border-gray-200 mb-4"><nav class="-mb-px flex space-x-6"><button onclick="changeView('transfers', {tab: 'buy'})" class="py-2 px-1 border-b-2 font-medium text-sm ${buyTabActive ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}">Comprar Jogadores</button><button onclick="changeView('transfers', {tab: 'sell'})" class="py-2 px-1 border-b-2 font-medium text-sm ${!buyTabActive ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}">Vender Jogadores</button></nav></div><div class="overflow-x-auto table-responsive rounded-lg border"><table class="min-w-full bg-white text-sm text-left">${tableContentHTML}</table></div>`;
+            container.innerHTML = `<div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4"><h2 class="text-2xl font-bold">Mercado de Transferências</h2><button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button></div><div class="border-b border-gray-200 mb-4"><nav class="-mb-px flex space-x-6"><button onclick="changeView('transfers', {tab: 'buy'})" class="py-2 px-1 border-b-2 font-medium text-sm ${buyTabActive ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}">Comprar Jogadores</button><button onclick="changeView('transfers', {tab: 'sell'})" class="py-2 px-1 border-b-2 font-medium text-sm ${!buyTabActive ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}">Vender Jogadores</button></nav></div>${tableContentHTML}`;
             mainContent.appendChild(container);
+        }
+        
+        function renderStadium() {
+            const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            const stadiumInfo = STADIUM_DATA[team.stadiumLevel - 1];
+            const maxLevel = team.stadiumLevel >= 5;
+
+            const container = document.createElement('div');
+            container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
+            container.innerHTML = `
+                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6">
+                    <h2 class="text-2xl font-bold">Gestão do Estádio</h2>
+                    <button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                    <div class="bg-blue-100 p-4 rounded-lg">
+                        <h3 class="text-lg font-semibold text-blue-800">Nível do Estádio</h3>
+                        <p class="text-3xl font-bold text-blue-700">${stadiumInfo.level}</p>
+                    </div>
+                    <div class="bg-gray-100 p-4 rounded-lg">
+                        <h3 class="text-lg font-semibold text-gray-800">Capacidade</h3>
+                        <p class="text-3xl font-bold text-gray-700">${stadiumInfo.capacity.toLocaleString('pt-BR')}</p>
+                    </div>
+                    <div class="bg-green-100 p-4 rounded-lg">
+                        <h3 class="text-lg font-semibold text-green-800">Preço do Ingresso</h3>
+                        <p class="text-3xl font-bold text-green-700">R$ ${stadiumInfo.ticketPrice.toLocaleString('pt-BR')}</p>
+                    </div>
+                </div>
+                <div class="mt-8 p-4 bg-gray-50 rounded-lg border">
+                    <h3 class="font-bold text-lg mb-2 text-center">Melhorar Estádio</h3>
+                    ${!maxLevel ? `
+                        <p class="text-center">Melhore seu estádio para aumentar a capacidade e a renda com ingressos.</p>
+                        <p class="text-center mt-2">Custo para o Nível ${stadiumInfo.level + 1}: <span class="font-bold text-red-600">R$ ${stadiumInfo.upgradeCost.toLocaleString('pt-BR')}</span></p>
+                        <button onclick="upgradeStadium()" class="w-full mt-4 p-3 bg-green-500 text-white rounded-lg font-bold hover:bg-green-600 transition shadow">Melhorar para Nível ${stadiumInfo.level + 1}</button>
+                    ` : '<p class="text-center font-bold text-green-600">Seu estádio já está no nível máximo!</p>'}
+                </div>
+            `;
+            mainContent.appendChild(container);
+        }
+
+        /**
+         * Generic function to render a sortable table.
+         * @param {string} viewKey - The key for sorting state (e.g., 'finances').
+         * @param {Array<object>} columns - Array of column definitions. { header, key, class, format, sortable (default true) }
+         * @param {Array<object>} data - The data to display.
+         * @param {function} [actionRenderer] - Optional function to render an action cell.
+         * @returns {string} HTML string for the table.
+         */
+        function renderTable(viewKey, columns, data, actionRenderer = null) {
+            const headerHTML = columns.map(col => {
+                const sortable = col.sortable !== false;
+                return `<th class="p-3 font-semibold ${col.class || ''} ${sortable ? 'sortable' : ''}" ${sortable ? `onclick="handleSort('${viewKey}', '${col.key}')"` : ''}>
+                    ${col.header} ${sortable ? getSortIcon(viewKey, col.key) : ''}
+                </th>`;
+            }).join('');
+
+            const bodyHTML = data.map(row => {
+                const rowHTML = columns.map(col => {
+                    let cellValue = row[col.key];
+                    if (col.key === 'action' && actionRenderer) {
+                        return `<td class="p-3 ${col.class || ''}">${actionRenderer(row)}</td>`;
+                    }
+                    if (col.format === 'currency') {
+                        cellValue = `R$ ${cellValue.toLocaleString('pt-BR')}`;
+                    }
+                    return `<td class="p-3 ${col.class || ''}">${cellValue}</td>`;
+                }).join('');
+                return `<tr class="border-b hover:bg-gray-50">${rowHTML}</tr>`;
+            }).join('');
+            
+            if(data.length === 0) {
+                return `<p class="text-center text-gray-500 p-4">Nenhum dado para exibir.</p>`;
+            }
+
+            return `<div class="overflow-x-auto table-responsive rounded-lg border">
+                        <table class="min-w-full bg-white text-sm text-left">
+                            <thead class="bg-gray-200"><tr>${headerHTML}</tr></thead>
+                            <tbody>${bodyHTML}</tbody>
+                        </table>
+                    </div>`;
         }
 
         // --- GAME START ---
