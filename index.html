@@ -150,6 +150,7 @@
         const MIN_SQUAD_SIZE = 18;
         const MIN_GOALKEEPERS = 2;
         const PRIZE_MONEY = { WIN: 50000, DRAW: 15000 };
+        const ACADEMY_UPGRADE_COST = [0, 1000000, 2500000, 5000000, 10000000]; // cost for level 2, 3, 4, 5
 
         // --- GAME STATE ---
         const gameState = {
@@ -166,24 +167,28 @@
             transferMarket: { activeTab: 'buy' },
             statsView: { activeTab: 'scorers'},
             dragAndDrop: { draggedPlayerId: null },
-            endOfSeasonReport: { improved: [], declined: [], retired: [], prize: 0 },
+            endOfSeasonReport: { improved: [], declined: [], retired: [], prize: 0, newYouth: [] },
             sorting: {
                 league: { key: 'points', order: 'desc' },
                 finances: { key: 'salary', order: 'desc' },
                 'transfers-buy': { key: 'skill', order: 'desc' },
                 'transfers-sell': { key: 'value', order: 'desc' },
-                scorers: { key: 'goals', order: 'desc' }
+                scorers: { key: 'goals', order: 'desc' },
+                academy: { key: 'skill', order: 'desc' }
             }
         };
 
         // --- CORE LOGIC ---
         const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
-        function generatePlayer(teamId, position) {
+        function generatePlayer(teamId, position, isYouth = false) {
             const name = `${FIRST_NAMES[getRandomInt(0, FIRST_NAMES.length - 1)]} ${LAST_NAMES[getRandomInt(0, LAST_NAMES.length - 1)]}`;
-            const skill = getRandomInt(40, 85);
-            const player = { id: crypto.randomUUID(), name, age: getRandomInt(18, 34), position, skill, strength: getRandomInt(40, 85), value: getRandomInt(100, 5000) * 1000, teamId, injuryTurns: 0, isSuspended: false, salary: Math.floor(skill * 1000 + getRandomInt(500, 2000)) };
-            gameState.playerStats.push({ playerId: player.id, name: player.name, teamName: TEAM_NAMES[teamId], goals: 0 });
+            const age = isYouth ? getRandomInt(16, 18) : getRandomInt(18, 34);
+            const skill = isYouth ? getRandomInt(30, 55) : getRandomInt(40, 85);
+            const player = { id: crypto.randomUUID(), name, age, position, skill, strength: getRandomInt(40, 85), value: getRandomInt(100, 5000) * 1000, teamId, injuryTurns: 0, isSuspended: false, salary: Math.floor(skill * 1000 + getRandomInt(500, 2000)) };
+            if (!isYouth) {
+                gameState.playerStats.push({ playerId: player.id, name: player.name, teamName: TEAM_NAMES[teamId], goals: 0 });
+            }
             return player;
         }
 
@@ -193,7 +198,14 @@
             for (let i = 0; i < 8; i++) players.push(generatePlayer(id, POSITIONS.DEFENDER));
             for (let i = 0; i < 8; i++) players.push(generatePlayer(id, POSITIONS.MIDFIELDER));
             for (let i = 0; i < 6; i++) players.push(generatePlayer(id, POSITIONS.ATTACKER));
-            const team = { id, name, players, cash: getRandomInt(5, 15) * 1000000, tactic: '4-4-2', startingXI: [], reserves: [], seasonIncome: 0 };
+            
+            const youthPlayers = [];
+            for (let i = 0; i < 5; i++) {
+                const pos = [POSITIONS.DEFENDER, POSITIONS.MIDFIELDER, POSITIONS.ATTACKER][getRandomInt(0, 2)];
+                youthPlayers.push(generatePlayer(id, pos, true));
+            }
+
+            const team = { id, name, players, cash: getRandomInt(5, 15) * 1000000, tactic: '4-4-2', startingXI: [], reserves: [], seasonIncome: 0, youthAcademyLevel: 1, youthPlayers };
             setInitialLineup(team);
             return team;
         }
@@ -404,7 +416,7 @@
         }
         
         function handleEndOfSeason() {
-            const report = { improved: [], declined: [], retired: [], prize: 0 };
+            const report = { improved: [], declined: [], retired: [], prize: 0, newYouth: [] };
             
             const sortedTable = [...gameState.leagueTable].sort((a, b) => b.points - a.points || (b.goalDifference - a.goalDifference));
             sortedTable.forEach((entry, index) => {
@@ -443,6 +455,18 @@
                 });
                 team.players = team.players.filter(p => !retiredPlayers.includes(p.id));
                 gameState.playerStats = gameState.playerStats.filter(ps => !retiredPlayers.includes(ps.playerId));
+
+                // Generate new youth players
+                const newYouthCount = getRandomInt(1, 3);
+                for(let i = 0; i < newYouthCount; i++) {
+                    const pos = [POSITIONS.DEFENDER, POSITIONS.MIDFIELDER, POSITIONS.ATTACKER][getRandomInt(0, 2)];
+                    const newYouth = generatePlayer(team.id, pos, true);
+                    newYouth.skill += team.youthAcademyLevel * 2; // Bonus for academy level
+                    team.youthPlayers.push(newYouth);
+                    if (team.id === gameState.playerTeamId) {
+                        report.newYouth.push(newYouth);
+                    }
+                }
 
                 while (team.players.length < MIN_SQUAD_SIZE) {
                     const pos = [POSITIONS.DEFENDER, POSITIONS.MIDFIELDER, POSITIONS.ATTACKER][getRandomInt(0, 2)];
@@ -579,6 +603,37 @@
                 }
             });
         }
+        
+        function upgradeAcademy() {
+            const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            if (team.youthAcademyLevel >= 5) {
+                showNotification("Sua academia já está no nível máximo!", "info");
+                return;
+            }
+            const cost = ACADEMY_UPGRADE_COST[team.youthAcademyLevel];
+            if (team.cash >= cost) {
+                team.cash -= cost;
+                team.youthAcademyLevel++;
+                showNotification(`Academia melhorada para o nível ${team.youthAcademyLevel}!`, "success");
+                render();
+            } else {
+                showNotification("Dinheiro insuficiente para melhorar a academia.", "error");
+            }
+        }
+
+        function promoteYouthPlayer(playerId) {
+            const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            const playerIndex = team.youthPlayers.findIndex(p => p.id === playerId);
+            if (playerIndex > -1) {
+                const player = team.youthPlayers[playerIndex];
+                team.youthPlayers.splice(playerIndex, 1);
+                team.players.push(player);
+                gameState.playerStats.push({ playerId: player.id, name: player.name, teamName: team.name, goals: 0 });
+                setInitialLineup(team);
+                showNotification(`${player.name} foi promovido ao time principal!`, "success");
+                render();
+            }
+        }
 
         function initGame() {
             for (let i = 0; i < TEAM_NAMES.length; i++) {
@@ -657,6 +712,7 @@
                 case 'end-of-season': renderEndOfSeason(); break;
                 case 'finances': renderFinances(); break;
                 case 'statistics': renderStatistics(); break;
+                case 'academy': renderAcademy(); break;
                 default: renderTeamSelection();
             }
             if (gameState.playerTeamId !== null) {
@@ -691,12 +747,13 @@
             container.innerHTML = `
                 <h2 class="text-2xl font-bold mb-4">Painel Principal</h2>
                 <p>Bem-vindo, técnico! O que você gostaria de fazer?</p>
-                <div class="mt-6 grid grid-cols-2 lg:grid-cols-5 gap-4 text-white">
+                <div class="mt-6 grid grid-cols-2 md:grid-cols-3 gap-4 text-white">
                     <button onclick="changeView('tactics')" class="p-4 bg-blue-500 rounded-lg font-semibold hover:bg-blue-600 transition shadow">Elenco/Táticas</button>
                     <button onclick="changeView('league')" class="p-4 bg-green-500 rounded-lg font-semibold hover:bg-green-600 transition shadow">Campeonato</button>
                     <button onclick="changeView('transfers')" class="p-4 bg-yellow-500 rounded-lg font-semibold hover:bg-yellow-600 transition shadow">Mercado</button>
                     <button onclick="changeView('finances')" class="p-4 bg-indigo-500 rounded-lg font-semibold hover:bg-indigo-600 transition shadow">Finanças</button>
                     <button onclick="changeView('statistics')" class="p-4 bg-purple-500 rounded-lg font-semibold hover:bg-purple-600 transition shadow">Estatísticas</button>
+                    <button onclick="changeView('academy')" class="p-4 bg-teal-500 rounded-lg font-semibold hover:bg-teal-600 transition shadow">Academia</button>
                 </div>
                 <div class="mt-8 p-4 bg-gray-50 rounded-lg border">
                     <h3 class="font-bold text-lg mb-2 text-center">Próxima Partida (Rodada ${isEndOfSeason ? gameState.fixtures.length : gameState.currentRound})</h3>
@@ -809,12 +866,21 @@
 
             const container = document.createElement('div');
             container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
-            container.innerHTML = `<h2 class="text-2xl font-bold mb-4 text-center">Resultados da Rodada ${gameState.currentRound - 1}</h2><div class="space-y-3">${gameState.lastRoundResults.map(result => { const homeTeam = gameState.teams.find(t => t.id === result.homeTeamId); const awayTeam = gameState.teams.find(t => t.id === result.awayTeamId); const isPlayerMatch = homeTeam.id === playerTeamId || awayTeam.id === playerTeamId; return `<div class="flex items-center justify-between p-3 rounded-lg ${isPlayerMatch ? 'bg-blue-100 border border-blue-200' : 'bg-gray-50'}"><span class="w-2/5 text-right truncate ${isPlayerMatch ? 'font-bold' : ''}">${homeTeam.name}</span><span class="mx-3 px-3 py-1 bg-gray-700 text-white rounded-md font-bold text-lg">${result.homeGoals} - ${result.awayGoals}</span><span class="w-2/5 text-left truncate ${isPlayerMatch ? 'font-bold' : ''}">${awayTeam.name}</span></div>` }).join('')}</div>${eventsHTML}<button onclick="changeView('dashboard')" class="w-full mt-6 p-3 bg-green-500 text-white rounded-lg font-bold hover:bg-green-600 transition shadow">Continuar</button>`;
+            container.innerHTML = `
+                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4">
+                    <h2 class="text-2xl font-bold">Resultados da Rodada ${gameState.currentRound - 1}</h2>
+                    <button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 transition shadow">Continuar</button>
+                </div>
+                <div class="space-y-3">
+                    ${gameState.lastRoundResults.map(result => { const homeTeam = gameState.teams.find(t => t.id === result.homeTeamId); const awayTeam = gameState.teams.find(t => t.id === result.awayTeamId); const isPlayerMatch = homeTeam.id === playerTeamId || awayTeam.id === playerTeamId; return `<div class="flex items-center justify-between p-3 rounded-lg ${isPlayerMatch ? 'bg-blue-100 border border-blue-200' : 'bg-gray-50'}"><span class="w-2/5 text-right truncate ${isPlayerMatch ? 'font-bold' : ''}">${homeTeam.name}</span><span class="mx-3 px-3 py-1 bg-gray-700 text-white rounded-md font-bold text-lg">${result.homeGoals} - ${result.awayGoals}</span><span class="w-2/5 text-left truncate ${isPlayerMatch ? 'font-bold' : ''}">${awayTeam.name}</span></div>` }).join('')}
+                </div>
+                ${eventsHTML}
+            `;
             mainContent.appendChild(container);
         }
 
         function renderEndOfSeason() {
-            const { improved, declined, retired, prize } = gameState.endOfSeasonReport;
+            const { improved, declined, retired, prize, newYouth } = gameState.endOfSeasonReport;
             const renderList = (title, players, color) => {
                 if (players.length === 0) return '';
                 return `<div><h3 class="text-lg font-bold mb-2 text-${color}-600">${title}</h3><ul class="list-disc list-inside space-y-1">${players.map(p => `<li>${p.name} ${p.age ? `(Idade: ${p.age})` : ''} <span class="font-bold">${p.change || ''}</span></li>`).join('')}</ul></div>`;
@@ -828,10 +894,10 @@
                     <p class="text-2xl font-bold text-green-700">R$ ${prize.toLocaleString('pt-BR')}</p>
                 </div>
                 <div class="space-y-6">
+                    ${renderList('Novos Talentos da Academia', newYouth.map(p => ({name: p.name, change: `(Habil: ${p.skill})`})), 'blue')}
                     ${renderList('Jogadores que Evoluíram', improved, 'green')}
                     ${renderList('Jogadores que Regrediram', declined, 'yellow')}
                     ${renderList('Jogadores Aposentados', retired, 'red')}
-                    ${improved.length === 0 && declined.length === 0 && retired.length === 0 ? '<p class="text-center text-gray-500">Nenhuma mudança significativa no seu elenco nesta temporada.</p>' : ''}
                 </div>
                 <button onclick="startNewSeason()" class="w-full mt-8 p-3 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 transition shadow">Iniciar Nova Temporada</button>`;
             mainContent.appendChild(container);
@@ -950,6 +1016,56 @@
             mainContent.appendChild(container);
         }
 
+        function renderAcademy() {
+            const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            const { key, order } = gameState.sorting.academy;
+            const sortedYouth = sortData(team.youthPlayers, key, order);
+            const upgradeCost = ACADEMY_UPGRADE_COST[team.youthAcademyLevel];
+            const maxLevel = team.youthAcademyLevel >= 5;
+
+            const container = document.createElement('div');
+            container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
+            container.innerHTML = `
+                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6">
+                    <h2 class="text-2xl font-bold">Academia de Jovens</h2>
+                    <button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button>
+                </div>
+                <div class="bg-gray-100 p-4 rounded-lg mb-6">
+                    <h3 class="text-lg font-bold">Estrutura da Academia</h3>
+                    <p>Nível Atual: <span class="font-bold text-blue-600">${team.youthAcademyLevel}</span></p>
+                    ${!maxLevel ? `
+                        <p>Custo para próximo nível: <span class="font-bold text-red-600">R$ ${upgradeCost.toLocaleString('pt-BR')}</span></p>
+                        <button onclick="upgradeAcademy()" class="mt-2 px-4 py-2 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 transition shadow">Melhorar Academia</button>
+                    ` : '<p class="font-bold text-green-600">Sua academia já está no nível máximo!</p>'}
+                </div>
+
+                <h3 class="text-xl font-bold mt-8 mb-2">Jovens Talentos</h3>
+                <div class="overflow-x-auto table-responsive rounded-lg border">
+                    <table class="min-w-full bg-white text-sm text-left">
+                        <thead class="bg-gray-200"><tr>
+                            <th class="p-3 font-semibold sortable" onclick="handleSort('academy', 'name')">Nome ${getSortIcon('academy', 'name')}</th>
+                            <th class="p-3 font-semibold sortable" onclick="handleSort('academy', 'age')">Idade ${getSortIcon('academy', 'age')}</th>
+                            <th class="p-3 font-semibold sortable" onclick="handleSort('academy', 'position')">Pos. ${getSortIcon('academy', 'position')}</th>
+                            <th class="p-3 font-semibold text-center sortable" onclick="handleSort('academy', 'skill')">Habil. ${getSortIcon('academy', 'skill')}</th>
+                            <th class="p-3 font-semibold text-center">Ação</th>
+                        </tr></thead>
+                        <tbody>
+                            ${sortedYouth.length > 0 ? sortedYouth.map(p => `
+                                <tr class="border-b hover:bg-gray-50">
+                                    <td class="p-3 font-medium">${p.name}</td>
+                                    <td class="p-3">${p.age}</td>
+                                    <td class="p-3">${p.position}</td>
+                                    <td class="p-3 text-center font-bold text-blue-600">${p.skill}</td>
+                                    <td class="p-3 text-center">
+                                        <button onclick="promoteYouthPlayer('${p.id}')" class="px-3 py-1 bg-blue-500 text-white text-xs font-bold rounded hover:bg-blue-600 transition">Promover</button>
+                                    </td>
+                                </tr>`).join('') : '<tr><td colspan="5" class="p-4 text-center text-gray-500">Nenhum jovem na academia no momento.</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            mainContent.appendChild(container);
+        }
 
         function renderTransfers() {
             const playerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
