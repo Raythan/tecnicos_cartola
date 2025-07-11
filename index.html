@@ -170,15 +170,16 @@
                 leagueTable: [],
                 playerStats: [],
                 managerHistory: [],
+                awardsHistory: [],
                 fixtures: [],
-                currentSeason: 1,
+                currentYear: 2025,
                 currentRound: 1,
                 lastRoundResults: [],
                 view: 'team-selection',
                 transferMarket: { activeTab: 'buy' },
                 statsView: { activeTab: 'scorers'},
                 dragAndDrop: { draggedPlayerId: null },
-                endOfSeasonReport: { improved: [], declined: [], retired: [], prize: 0, newYouth: [] },
+                endOfSeasonReport: { improved: [], declined: [], retired: [], prize: 0, newYouth: [], awards: {} },
                 sorting: {
                     league: { key: 'points', order: 'desc' },
                     finances: { key: 'salary', order: 'desc' },
@@ -220,7 +221,7 @@
             const name = `${FIRST_NAMES[getRandomInt(0, FIRST_NAMES.length - 1)]} ${LAST_NAMES[getRandomInt(0, LAST_NAMES.length - 1)]}`;
             const age = isYouth ? getRandomInt(16, 18) : getRandomInt(18, 34);
             const skill = isYouth ? getRandomInt(30, 55) : getRandomInt(40, 85);
-            const player = { id: crypto.randomUUID(), name, age, position, skill, strength: getRandomInt(40, 85), value: getRandomInt(100, 5000) * 1000, teamId, injuryTurns: 0, isSuspended: false, salary: Math.floor(skill * 1000 + getRandomInt(500, 2000)) };
+            const player = { id: crypto.randomUUID(), name, age, position, skill, strength: getRandomInt(40, 85), value: getRandomInt(100, 5000) * 1000, teamId, injuryTurns: 0, isSuspended: false, salary: Math.floor(skill * 1000 + getRandomInt(500, 2000)), matchRatings: [] };
             if (!isYouth) {
                 gameState.playerStats.push({ playerId: player.id, name: player.name, teamName: TEAM_NAMES[teamId], goals: 0 });
             }
@@ -336,6 +337,28 @@
             }
         }
 
+        function calculateMatchRatings(homeTeam, awayTeam, homeGoals, awayGoals) {
+            const playersInMatch = [...homeTeam.players.filter(p => homeTeam.startingXI.includes(p.id)), ...awayTeam.players.filter(p => awayTeam.startingXI.includes(p.id))];
+            
+            playersInMatch.forEach(player => {
+                let rating = 5.0;
+                rating += (player.skill - 60) / 10; // Base rating on skill
+
+                const isHomePlayer = player.teamId === homeTeam.id;
+                if ((isHomePlayer && homeGoals > awayGoals) || (!isHomePlayer && awayGoals > homeGoals)) {
+                    rating += 0.5; // Win bonus
+                } else if (homeGoals === awayGoals) {
+                    rating += 0.2; // Draw bonus
+                } else {
+                    rating -= 0.3; // Loss penalty
+                }
+
+                rating += (Math.random() - 0.5); // Randomness
+                rating = Math.max(4.0, Math.min(10.0, rating)); // Clamp between 4 and 10
+                player.matchRatings.push(parseFloat(rating.toFixed(1)));
+            });
+        }
+
         function simulateMatch(match) {
             const homeTeam = gameState.teams.find(t => t.id === match.homeTeamId);
             const awayTeam = gameState.teams.find(t => t.id === match.awayTeamId);
@@ -349,6 +372,7 @@
 
             assignGoals(homeTeam, homeGoals);
             assignGoals(awayTeam, awayGoals);
+            calculateMatchRatings(homeTeam, awayTeam, homeGoals, awayGoals);
             
             const matchEvents = { injuries: [], suspensions: [] };
             const playersInMatch = [...homeTeam.players.filter(p => homeTeam.startingXI.includes(p.id)), ...awayTeam.players.filter(p => awayTeam.startingXI.includes(p.id))];
@@ -456,8 +480,56 @@
             }
         }
         
+        function calculateIndividualAwards() {
+            const allPlayers = gameState.teams.flatMap(t => t.players);
+            const minGames = gameState.fixtures.length / 2; // Must play at least half the season
+
+            const getAverageRating = (player) => {
+                if (!player || !player.matchRatings || player.matchRatings.length === 0) return 0;
+                return player.matchRatings.reduce((a, b) => a + b, 0) / player.matchRatings.length;
+            };
+
+            const eligiblePlayers = allPlayers.filter(p => p.matchRatings && p.matchRatings.length >= minGames);
+
+            // Golden Boot
+            const topScorer = [...gameState.playerStats].sort((a, b) => b.goals - a.goals)[0];
+
+            // Golden Glove
+            const bestGoalkeeper = eligiblePlayers
+                .filter(p => p.position === POSITIONS.GOALKEEPER)
+                .sort((a, b) => getAverageRating(b) - getAverageRating(a))[0];
+
+            // Player of the Season
+            const bestPlayer = eligiblePlayers
+                .filter(p => p.position !== POSITIONS.GOALKEEPER)
+                .sort((a, b) => getAverageRating(b) - getAverageRating(a))[0];
+            
+            // Team of the Season
+            const teamOfTheSeason = {};
+            for (const pos of Object.values(POSITIONS)) {
+                teamOfTheSeason[pos] = eligiblePlayers
+                    .filter(p => p.position === pos)
+                    .sort((a, b) => getAverageRating(b) - getAverageRating(a));
+            }
+
+            return {
+                goldenBoot: topScorer,
+                goldenGlove: bestGoalkeeper,
+                playerOfTheSeason: bestPlayer,
+                teamOfTheSeason: {
+                    [POSITIONS.GOALKEEPER]: teamOfTheSeason[POSITIONS.GOALKEEPER].slice(0, 1),
+                    [POSITIONS.DEFENDER]: teamOfTheSeason[POSITIONS.DEFENDER].slice(0, 4),
+                    [POSITIONS.MIDFIELDER]: teamOfTheSeason[POSITIONS.MIDFIELDER].slice(0, 4),
+                    [POSITIONS.ATTACKER]: teamOfTheSeason[POSITIONS.ATTACKER].slice(0, 2),
+                }
+            };
+        }
+
         function handleEndOfSeason() {
-            const report = { improved: [], declined: [], retired: [], prize: 0, newYouth: [] };
+            const report = { improved: [], declined: [], retired: [], prize: 0, newYouth: [], awards: {} };
+            
+            report.awards = calculateIndividualAwards();
+            gameState.awardsHistory.push({ year: gameState.currentYear, ...report.awards });
             
             const sortedTable = [...gameState.leagueTable].sort((a, b) => b.points - a.points || (b.goalDifference - a.goalDifference));
             sortedTable.forEach((entry, index) => {
@@ -468,7 +540,7 @@
                     report.prize = prize;
                     const playerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
                     gameState.managerHistory.push({
-                        season: gameState.currentSeason,
+                        year: gameState.currentYear,
                         teamName: playerTeam.name,
                         position: index + 1,
                         champion: index === 0
@@ -481,6 +553,7 @@
                 team.players.forEach(player => {
                     const originalSkill = player.skill;
                     player.age++;
+                    player.matchRatings = []; // Reset for new season
                     if (player.age >= 36 && Math.random() < 0.25) {
                         retiredPlayers.push(player.id);
                         if (team.id === gameState.playerTeamId) report.retired.push({ name: player.name, age: player.age });
@@ -497,12 +570,11 @@
                 team.players = team.players.filter(p => !retiredPlayers.includes(p.id));
                 gameState.playerStats = gameState.playerStats.filter(ps => !retiredPlayers.includes(ps.playerId));
 
-                // Generate new youth players
                 const newYouthCount = getRandomInt(1, 3);
                 for(let i = 0; i < newYouthCount; i++) {
                     const pos = [POSITIONS.DEFENDER, POSITIONS.MIDFIELDER, POSITIONS.ATTACKER][getRandomInt(0, 2)];
                     const newYouth = generatePlayer(team.id, pos, true);
-                    newYouth.skill += team.youthAcademyLevel * 2; // Bonus for academy level
+                    newYouth.skill += team.youthAcademyLevel * 2;
                     team.youthPlayers.push(newYouth);
                     if (team.id === gameState.playerTeamId) {
                         report.newYouth.push(newYouth);
@@ -519,7 +591,7 @@
         }
 
         function startNewSeason() {
-            gameState.currentSeason++;
+            gameState.currentYear++;
             gameState.currentRound = 1;
             gameState.lastRoundResults = [];
             gameState.playerStats.forEach(ps => ps.goals = 0);
@@ -846,7 +918,7 @@
             container.innerHTML = `
                 <h2 class="text-2xl font-bold mb-4">Painel Principal</h2>
                 <p>Bem-vindo, técnico! O que você gostaria de fazer?</p>
-                <div class="mt-6 grid grid-cols-2 md:grid-cols-3 gap-4 text-white">
+                <div class="mt-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 text-white">
                     <button onclick="changeView('tactics')" class="p-4 bg-blue-500 rounded-lg font-semibold hover:bg-blue-600 transition shadow">Elenco/Táticas</button>
                     <button onclick="changeView('league')" class="p-4 bg-green-500 rounded-lg font-semibold hover:bg-green-600 transition shadow">Campeonato</button>
                     <button onclick="changeView('transfers')" class="p-4 bg-yellow-500 rounded-lg font-semibold hover:bg-yellow-600 transition shadow">Mercado</button>
@@ -964,12 +1036,18 @@
                 eventsHTML += `<h3 class="text-lg font-bold mt-4 text-yellow-600">Jogadores Suspensos</h3><ul class="list-disc list-inside">${suspensions.map(e => `<li>${e.name}</li>`).join('')}</ul>`;
             }
 
+            const isEndOfSeason = gameState.currentRound > gameState.fixtures.length;
+            const buttonText = gameState.currentRound === gameState.fixtures.length ? "Ver Resumo da Temporada" : "Simular Próxima Rodada";
+
             const container = document.createElement('div');
             container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
             container.innerHTML = `
                 <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4">
                     <h2 class="text-2xl font-bold">Resultados da Rodada ${gameState.currentRound - 1}</h2>
-                    <button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 transition shadow">Continuar</button>
+                    <div class="flex items-center space-x-2 mt-3 sm:mt-0">
+                        <button onclick="changeView('dashboard')" class="px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">Voltar ao Painel</button>
+                        <button onclick="${isEndOfSeason ? '' : 'simulateRound()'}" class="px-4 py-2 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 transition shadow ${isEndOfSeason ? 'opacity-50 cursor-not-allowed' : ''}">${buttonText}</button>
+                    </div>
                 </div>
                 <div class="space-y-3">
                     ${gameState.lastRoundResults.map(result => { const homeTeam = gameState.teams.find(t => t.id === result.homeTeamId); const awayTeam = gameState.teams.find(t => t.id === result.awayTeamId); const isPlayerMatch = homeTeam.id === playerTeamId || awayTeam.id === playerTeamId; return `<div class="flex items-center justify-between p-3 rounded-lg ${isPlayerMatch ? 'bg-blue-100 border border-blue-200' : 'bg-gray-50'}"><span class="w-2/5 text-right truncate ${isPlayerMatch ? 'font-bold' : ''}">${homeTeam.name}</span><span class="mx-3 px-3 py-1 bg-gray-700 text-white rounded-md font-bold text-lg">${result.homeGoals} - ${result.awayGoals}</span><span class="w-2/5 text-left truncate ${isPlayerMatch ? 'font-bold' : ''}">${awayTeam.name}</span></div>` }).join('')}
@@ -980,15 +1058,33 @@
         }
 
         function renderEndOfSeason() {
-            const { improved, declined, retired, prize, newYouth } = gameState.endOfSeasonReport;
+            const { improved, declined, retired, prize, newYouth, awards } = gameState.endOfSeasonReport;
             const renderList = (title, players, color) => {
                 if (players.length === 0) return '';
                 return `<div><h3 class="text-lg font-bold mb-2 text-${color}-600">${title}</h3><ul class="list-disc list-inside space-y-1">${players.map(p => `<li>${p.name} ${p.age ? `(Idade: ${p.age})` : ''} <span class="font-bold">${p.change || ''}</span></li>`).join('')}</ul></div>`;
             };
+            
+            const renderAward = (title, player, detail) => {
+                if (!player) return '';
+                const teamName = player.teamName || gameState.teams.find(t => t.id === player.teamId)?.name;
+                if (!teamName) return '';
+                return `<div class="text-center"><h3 class="font-bold text-lg text-yellow-600">${title}</h3><p>${player.name} (${teamName})</p><p class="font-semibold">${detail}</p></div>`;
+            };
+
             const container = document.createElement('div');
             container.className = "bg-white shadow-md rounded-lg p-6";
             container.innerHTML = `
-                <h2 class="text-2xl font-bold mb-4 text-center">Resumo da Temporada ${gameState.currentSeason}</h2>
+                <h2 class="text-2xl font-bold mb-4 text-center">Resumo da Temporada ${gameState.currentYear}</h2>
+                
+                <div class="p-4 bg-yellow-100 border border-yellow-200 rounded-lg mb-6">
+                    <h3 class="text-xl font-bold text-center mb-4 text-yellow-800">Prêmios da Temporada &#127942;</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        ${renderAward('Craque do Campeonato', awards.playerOfTheSeason, `Média: ${awards.playerOfTheSeason && awards.playerOfTheSeason.matchRatings.length > 0 ? (awards.playerOfTheSeason.matchRatings.reduce((a,b)=>a+b,0)/awards.playerOfTheSeason.matchRatings.length).toFixed(2) : ''}`)}
+                        ${renderAward('Chuteira de Ouro', gameState.playerStats.find(ps => ps.playerId === awards.goldenBoot?.playerId), `${awards.goldenBoot?.goals || ''} Gols`)}
+                        ${renderAward('Luva de Ouro', awards.goldenGlove, `Média: ${awards.goldenGlove && awards.goldenGlove.matchRatings.length > 0 ? (awards.goldenGlove.matchRatings.reduce((a,b)=>a+b,0)/awards.goldenGlove.matchRatings.length).toFixed(2) : ''}`)}
+                    </div>
+                </div>
+
                 <div class="p-4 bg-green-100 border border-green-200 rounded-lg text-center mb-6">
                     <p class="font-semibold text-green-800">Prêmio por colocação no campeonato:</p>
                     <p class="text-2xl font-bold text-green-700">R$ ${prize.toLocaleString('pt-BR')}</p>
@@ -1005,8 +1101,6 @@
 
         function renderFinances() {
             const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
-            const { key, order } = gameState.sorting.finances;
-            const sortedPlayers = sortData(team.players, key, order);
             const totalIncome = team.seasonIncome.prizes + team.seasonIncome.tickets;
 
             const container = document.createElement('div');
@@ -1033,17 +1127,15 @@
                     </div>
                 </div>
                 <h3 class="text-xl font-bold mt-8 mb-2">Folha Salarial Detalhada</h3>
-                <div class="overflow-x-auto table-responsive rounded-lg border">
-                    ${renderTable('finances', 
-                        [
-                            { header: 'Nome', key: 'name' },
-                            { header: 'Idade', key: 'age' },
-                            { header: 'Habil.', key: 'skill', class: 'text-center' },
-                            { header: 'Salário Mensal', key: 'salary', class: 'text-right', format: 'currency' }
-                        ],
-                        sortedPlayers
-                    )}
-                </div>
+                ${renderTable('finances', 
+                    [
+                        { header: 'Nome', key: 'name' },
+                        { header: 'Idade', key: 'age' },
+                        { header: 'Habil.', key: 'skill', class: 'text-center' },
+                        { header: 'Salário Mensal', key: 'salary', class: 'text-right', format: 'currency' }
+                    ],
+                    team.players
+                )}
             `;
             mainContent.appendChild(container);
         }
@@ -1052,6 +1144,7 @@
             const activeTab = gameState.statsView.activeTab;
             const scorersTabActive = activeTab === 'scorers';
             const historyTabActive = activeTab === 'history';
+            const awardsTabActive = activeTab === 'awards';
 
             let contentHTML = '';
             if (scorersTabActive) {
@@ -1065,21 +1158,39 @@
                     ],
                     sortedScorers
                 );
-            } else { // History tab
+            } else if (historyTabActive) {
                 contentHTML = `
                     <div class="overflow-x-auto table-responsive rounded-lg border">
                         <table class="min-w-full bg-white text-sm text-left">
-                            <thead class="bg-gray-200"><tr><th class="p-3 font-semibold">Temporada</th><th class="p-3 font-semibold">Time</th><th class="p-3 font-semibold text-center">Posição Final</th></tr></thead>
+                            <thead class="bg-gray-200"><tr><th class="p-3 font-semibold">Ano</th><th class="p-3 font-semibold">Time</th><th class="p-3 font-semibold text-center">Posição Final</th></tr></thead>
                             <tbody>
                                 ${gameState.managerHistory.length > 0 ? gameState.managerHistory.map(h => `
                                     <tr class="border-b hover:bg-gray-50 ${h.champion ? 'bg-yellow-100' : ''}">
-                                        <td class="p-3 font-medium">${h.season}</td>
+                                        <td class="p-3 font-medium">${h.year}</td>
                                         <td class="p-3">${h.teamName}</td>
                                         <td class="p-3 text-center font-bold">${h.position}º ${h.champion ? '&#127942;' : ''}</td>
                                     </tr>`).join('') : '<tr><td colspan="3" class="p-4 text-center text-gray-500">Nenhum histórico para exibir. Complete uma temporada!</td></tr>'}
                             </tbody>
                         </table>
                     </div>`;
+            } else { // Awards History
+                 contentHTML = gameState.awardsHistory.slice().reverse().map(history => {
+                    const renderAward = (title, player, detail) => {
+                        if (!player) return '';
+                        const teamName = player.teamName || gameState.teams.find(t => t.id === player.teamId)?.name;
+                        if (!teamName) return '';
+                        return `<div class="text-center"><h3 class="font-bold text-md text-yellow-700">${title}</h3><p>${player.name} (${teamName})</p><p class="font-semibold">${detail}</p></div>`;
+                    };
+                    return `
+                        <div class="p-4 bg-yellow-100 border border-yellow-200 rounded-lg mb-4">
+                            <h3 class="text-xl font-bold text-center mb-4 text-yellow-800">Prêmios do Ano ${history.year} &#127942;</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                ${renderAward('Craque do Campeonato', history.playerOfTheSeason, `Média: ${history.playerOfTheSeason && history.playerOfTheSeason.matchRatings.length > 0 ? (history.playerOfTheSeason.matchRatings.reduce((a,b)=>a+b,0)/history.playerOfTheSeason.matchRatings.length).toFixed(2) : ''}`)}
+                                ${renderAward('Chuteira de Ouro', gameState.playerStats.find(ps => ps.playerId === history.goldenBoot?.playerId), `${history.goldenBoot?.goals || ''} Gols`)}
+                                ${renderAward('Luva de Ouro', history.goldenGlove, `Média: ${history.goldenGlove && history.goldenGlove.matchRatings.length > 0 ? (history.goldenGlove.matchRatings.reduce((a,b)=>a+b,0)/history.goldenGlove.matchRatings.length).toFixed(2) : ''}`)}
+                            </div>
+                        </div>`;
+                }).join('');
             }
 
             const container = document.createElement('div');
@@ -1094,6 +1205,7 @@
                     <nav class="-mb-px flex space-x-6">
                         <button onclick="changeView('statistics', {tab: 'scorers'})" class="py-2 px-1 border-b-2 font-medium text-sm ${scorersTabActive ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}">Artilheiros</button>
                         <button onclick="changeView('statistics', {tab: 'history'})" class="py-2 px-1 border-b-2 font-medium text-sm ${historyTabActive ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}">Hall da Fama</button>
+                        <button onclick="changeView('statistics', {tab: 'awards'})" class="py-2 px-1 border-b-2 font-medium text-sm ${awardsTabActive ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}">Prêmios Anteriores</button>
                     </nav>
                 </div>
                 ${contentHTML}
@@ -1136,6 +1248,44 @@
                     sortedYouth,
                     (p) => `<button onclick="promoteYouthPlayer('${p.id}')" class="px-3 py-1 bg-blue-500 text-white text-xs font-bold rounded hover:bg-blue-600 transition">Promover</button>`
                 )}
+            `;
+            mainContent.appendChild(container);
+        }
+
+        function renderStadium() {
+            const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            const stadiumInfo = STADIUM_DATA[team.stadiumLevel - 1];
+            const maxLevel = team.stadiumLevel >= 5;
+
+            const container = document.createElement('div');
+            container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
+            container.innerHTML = `
+                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6">
+                    <h2 class="text-2xl font-bold">Gestão do Estádio</h2>
+                    <button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                    <div class="bg-blue-100 p-4 rounded-lg">
+                        <h3 class="text-lg font-semibold text-blue-800">Nível do Estádio</h3>
+                        <p class="text-3xl font-bold text-blue-700">${stadiumInfo.level}</p>
+                    </div>
+                    <div class="bg-gray-100 p-4 rounded-lg">
+                        <h3 class="text-lg font-semibold text-gray-800">Capacidade</h3>
+                        <p class="text-3xl font-bold text-gray-700">${stadiumInfo.capacity.toLocaleString('pt-BR')}</p>
+                    </div>
+                    <div class="bg-green-100 p-4 rounded-lg">
+                        <h3 class="text-lg font-semibold text-green-800">Preço do Ingresso</h3>
+                        <p class="text-3xl font-bold text-green-700">R$ ${stadiumInfo.ticketPrice.toLocaleString('pt-BR')}</p>
+                    </div>
+                </div>
+                <div class="mt-8 p-4 bg-gray-50 rounded-lg border">
+                    <h3 class="font-bold text-lg mb-2 text-center">Melhorar Estádio</h3>
+                    ${!maxLevel ? `
+                        <p class="text-center">Melhore seu estádio para aumentar a capacidade e a renda com ingressos.</p>
+                        <p class="text-center mt-2">Custo para o Nível ${stadiumInfo.level + 1}: <span class="font-bold text-red-600">R$ ${stadiumInfo.upgradeCost.toLocaleString('pt-BR')}</span></p>
+                        <button onclick="upgradeStadium()" class="w-full mt-4 p-3 bg-green-500 text-white rounded-lg font-bold hover:bg-green-600 transition shadow">Melhorar para Nível ${stadiumInfo.level + 1}</button>
+                    ` : '<p class="text-center font-bold text-green-600">Seu estádio já está no nível máximo!</p>'}
+                </div>
             `;
             mainContent.appendChild(container);
         }
@@ -1185,52 +1335,6 @@
             mainContent.appendChild(container);
         }
         
-        function renderStadium() {
-            const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
-            const stadiumInfo = STADIUM_DATA[team.stadiumLevel - 1];
-            const maxLevel = team.stadiumLevel >= 5;
-
-            const container = document.createElement('div');
-            container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
-            container.innerHTML = `
-                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6">
-                    <h2 class="text-2xl font-bold">Gestão do Estádio</h2>
-                    <button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-                    <div class="bg-blue-100 p-4 rounded-lg">
-                        <h3 class="text-lg font-semibold text-blue-800">Nível do Estádio</h3>
-                        <p class="text-3xl font-bold text-blue-700">${stadiumInfo.level}</p>
-                    </div>
-                    <div class="bg-gray-100 p-4 rounded-lg">
-                        <h3 class="text-lg font-semibold text-gray-800">Capacidade</h3>
-                        <p class="text-3xl font-bold text-gray-700">${stadiumInfo.capacity.toLocaleString('pt-BR')}</p>
-                    </div>
-                    <div class="bg-green-100 p-4 rounded-lg">
-                        <h3 class="text-lg font-semibold text-green-800">Preço do Ingresso</h3>
-                        <p class="text-3xl font-bold text-green-700">R$ ${stadiumInfo.ticketPrice.toLocaleString('pt-BR')}</p>
-                    </div>
-                </div>
-                <div class="mt-8 p-4 bg-gray-50 rounded-lg border">
-                    <h3 class="font-bold text-lg mb-2 text-center">Melhorar Estádio</h3>
-                    ${!maxLevel ? `
-                        <p class="text-center">Melhore seu estádio para aumentar a capacidade e a renda com ingressos.</p>
-                        <p class="text-center mt-2">Custo para o Nível ${stadiumInfo.level + 1}: <span class="font-bold text-red-600">R$ ${stadiumInfo.upgradeCost.toLocaleString('pt-BR')}</span></p>
-                        <button onclick="upgradeStadium()" class="w-full mt-4 p-3 bg-green-500 text-white rounded-lg font-bold hover:bg-green-600 transition shadow">Melhorar para Nível ${stadiumInfo.level + 1}</button>
-                    ` : '<p class="text-center font-bold text-green-600">Seu estádio já está no nível máximo!</p>'}
-                </div>
-            `;
-            mainContent.appendChild(container);
-        }
-
-        /**
-         * Generic function to render a sortable table.
-         * @param {string} viewKey - The key for sorting state (e.g., 'finances').
-         * @param {Array<object>} columns - Array of column definitions. { header, key, class, format, sortable (default true) }
-         * @param {Array<object>} data - The data to display.
-         * @param {function} [actionRenderer] - Optional function to render an action cell.
-         * @returns {string} HTML string for the table.
-         */
         function renderTable(viewKey, columns, data, actionRenderer = null) {
             const headerHTML = columns.map(col => {
                 const sortable = col.sortable !== false;
