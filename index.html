@@ -151,32 +151,60 @@
         const MIN_GOALKEEPERS = 2;
         const PRIZE_MONEY = { WIN: 50000, DRAW: 15000 };
         const ACADEMY_UPGRADE_COST = [0, 1000000, 2500000, 5000000, 10000000]; // cost for level 2, 3, 4, 5
+        const SAVE_KEY = 'tecnicosCartolaSave';
 
         // --- GAME STATE ---
-        const gameState = {
-            playerTeamId: null,
-            teams: [],
-            leagueTable: [],
-            playerStats: [],
-            managerHistory: [],
-            fixtures: [],
-            currentSeason: 1,
-            currentRound: 1,
-            lastRoundResults: [],
-            view: 'team-selection',
-            transferMarket: { activeTab: 'buy' },
-            statsView: { activeTab: 'scorers'},
-            dragAndDrop: { draggedPlayerId: null },
-            endOfSeasonReport: { improved: [], declined: [], retired: [], prize: 0, newYouth: [] },
-            sorting: {
-                league: { key: 'points', order: 'desc' },
-                finances: { key: 'salary', order: 'desc' },
-                'transfers-buy': { key: 'skill', order: 'desc' },
-                'transfers-sell': { key: 'value', order: 'desc' },
-                scorers: { key: 'goals', order: 'desc' },
-                academy: { key: 'skill', order: 'desc' }
+        let gameState = {};
+
+        function getInitialState() {
+             return {
+                playerTeamId: null,
+                teams: [],
+                leagueTable: [],
+                playerStats: [],
+                managerHistory: [],
+                fixtures: [],
+                currentSeason: 1,
+                currentRound: 1,
+                lastRoundResults: [],
+                view: 'team-selection',
+                transferMarket: { activeTab: 'buy' },
+                statsView: { activeTab: 'scorers'},
+                dragAndDrop: { draggedPlayerId: null },
+                endOfSeasonReport: { improved: [], declined: [], retired: [], prize: 0, newYouth: [] },
+                sorting: {
+                    league: { key: 'points', order: 'desc' },
+                    finances: { key: 'salary', order: 'desc' },
+                    'transfers-buy': { key: 'skill', order: 'desc' },
+                    'transfers-sell': { key: 'value', order: 'desc' },
+                    scorers: { key: 'goals', order: 'desc' },
+                    academy: { key: 'skill', order: 'desc' }
+                }
+            };
+        }
+
+        // --- SAVE/LOAD LOGIC ---
+        function saveGame() {
+            try {
+                localStorage.setItem(SAVE_KEY, JSON.stringify(gameState));
+            } catch (e) {
+                console.error("Não foi possível salvar o jogo.", e);
+                showNotification("Erro ao salvar o jogo. Seu navegador pode estar com o modo de navegação anônima ou armazenamento cheio.", "error");
             }
-        };
+        }
+
+        function loadGame() {
+            const savedGame = localStorage.getItem(SAVE_KEY);
+            if (savedGame) {
+                gameState = JSON.parse(savedGame);
+                return true;
+            }
+            return false;
+        }
+        
+        function deleteSave() {
+            localStorage.removeItem(SAVE_KEY);
+        }
 
         // --- CORE LOGIC ---
         const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -635,13 +663,37 @@
             }
         }
 
-        function initGame() {
+        function startNewGameFlow() {
+            gameState.teams = [];
+            gameState.playerStats = [];
             for (let i = 0; i < TEAM_NAMES.length; i++) {
                 gameState.teams.push(generateTeam(i, TEAM_NAMES[i]));
             }
             createLeagueTable();
             generateFixtures();
-            render();
+            changeView('team-selection');
+        }
+
+        function continueGame() {
+            if (loadGame()) {
+                showNotification("Jogo carregado com sucesso!", "success");
+                changeView('dashboard');
+            }
+        }
+
+        function startNewGame() {
+            deleteSave();
+            gameState = getInitialState();
+            startNewGameFlow();
+        }
+
+        function initGame() {
+            if (localStorage.getItem(SAVE_KEY)) {
+                changeView('welcome-screen');
+            } else {
+                gameState = getInitialState();
+                startNewGameFlow();
+            }
         }
 
         function selectTeam(teamId) {
@@ -650,7 +702,7 @@
         }
 
         function changeView(newView, options = {}) {
-            if (gameState.playerTeamId === null && newView !== 'team-selection') return;
+            if (gameState.playerTeamId === null && !['team-selection', 'welcome-screen'].includes(newView)) return;
             gameState.view = newView;
             if (newView === 'transfers' && options.tab) { gameState.transferMarket.activeTab = options.tab; }
             if (newView === 'statistics' && options.tab) { gameState.statsView.activeTab = options.tab; }
@@ -703,6 +755,7 @@
         function render() {
             mainContent.innerHTML = '';
             switch (gameState.view) {
+                case 'welcome-screen': renderWelcomeScreen(); break;
                 case 'team-selection': renderTeamSelection(); break;
                 case 'dashboard': renderDashboard(); break;
                 case 'tactics': renderTactics(); break;
@@ -718,7 +771,22 @@
             if (gameState.playerTeamId !== null) {
                  const playerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
                  document.getElementById('team-info').innerHTML = `<h3 class="font-semibold text-lg">${playerTeam.name}</h3><p class="text-sm text-green-600">Caixa: R$ ${playerTeam.cash.toLocaleString('pt-BR')}</p>`;
+                 saveGame();
             }
+        }
+        
+        function renderWelcomeScreen() {
+            const container = document.createElement('div');
+            container.className = "bg-white shadow-md rounded-lg p-6 text-center";
+            container.innerHTML = `
+                <h2 class="text-2xl font-bold mb-4">Bem-vindo de volta, Técnico!</h2>
+                <p class="mb-6">Encontramos um jogo salvo. O que você deseja fazer?</p>
+                <div class="flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-4">
+                    <button onclick="continueGame()" class="px-6 py-3 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 transition shadow">Continuar Jogo</button>
+                    <button onclick="startNewGame()" class="px-6 py-3 bg-red-500 text-white rounded-lg font-semibold hover:bg-red-600 transition shadow">Novo Jogo</button>
+                </div>
+            `;
+            mainContent.appendChild(container);
         }
 
         function renderTeamSelection() {
