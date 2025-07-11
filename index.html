@@ -332,8 +332,13 @@
 
             for(let i=0; i<goals; i++) {
                 const scorer = potentialScorers[Math.floor(Math.random() * potentialScorers.length)];
-                const stat = gameState.playerStats.find(ps => ps.playerId === scorer.id);
-                if (stat) stat.goals++;
+                let stat = gameState.playerStats.find(ps => ps.playerId === scorer.id);
+                if (stat) {
+                    stat.goals++;
+                } else {
+                    // Safeguard for players not in stats (e.g., promoted youth)
+                    gameState.playerStats.push({ playerId: scorer.id, name: scorer.name, teamName: team.name, goals: 1 });
+                }
             }
         }
 
@@ -1191,6 +1196,9 @@
                             </div>
                         </div>`;
                 }).join('');
+                if (contentHTML.length === 0) {
+                    contentHTML = '<p class="text-center text-gray-500 p-4">Nenhum histórico de prêmios para exibir. Complete uma temporada!</p>';
+                }
             }
 
             const container = document.createElement('div');
