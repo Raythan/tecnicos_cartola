@@ -164,6 +164,11 @@
             { level: 4, capacity: 40000, ticketPrice: 35, upgradeCost: 25000000 },
             { level: 5, capacity: 60000, ticketPrice: 40, upgradeCost: 0 },
         ];
+        const SPONSORS = [
+            { id: 1, name: 'Aposta Segura', description: 'Garante uma boa renda fixa.', fixedValue: 5000000, winBonus: 20000 },
+            { id: 2, name: 'Equilíbrio Total', description: 'Uma mistura de renda fixa e bônus por performance.', fixedValue: 3000000, winBonus: 60000 },
+            { id: 3, name: 'Risco e Glória', description: 'Baixa renda fixa, mas com bônus generosos por vitória.', fixedValue: 1000000, winBonus: 120000 },
+        ];
         const SAVE_KEY = 'tecnicosCartolaSave';
 
         // --- GAME STATE ---
@@ -250,7 +255,7 @@
                 youthPlayers.push(generatePlayer(id, pos, true));
             }
 
-            const team = { id, name, players, cash: getRandomInt(5, 15) * 1000000, tactic: '4-4-2', startingXI: [], reserves: [], seasonIncome: {prizes: 0, tickets: 0}, youthAcademyLevel: 1, youthPlayers, stadiumLevel: 1 };
+            const team = { id, name, players, cash: getRandomInt(5, 15) * 1000000, tactic: '4-4-2', startingXI: [], reserves: [], seasonIncome: {prizes: 0, tickets: 0, sponsor: 0}, youthAcademyLevel: 1, youthPlayers, stadiumLevel: 1, sponsorId: null };
             setInitialLineup(team);
             return team;
         }
@@ -440,10 +445,20 @@
                 homeStats.wins++; homeStats.points += 3; awayStats.losses++;
                 homeTeam.cash += PRIZE_MONEY.WIN;
                 homeTeam.seasonIncome.prizes += PRIZE_MONEY.WIN;
+                if (homeTeam.sponsorId) {
+                    const sponsor = SPONSORS.find(s => s.id === homeTeam.sponsorId);
+                    homeTeam.cash += sponsor.winBonus;
+                    homeTeam.seasonIncome.sponsor += sponsor.winBonus;
+                }
             } else if (result.awayGoals > result.homeGoals) {
                 awayStats.wins++; awayStats.points += 3; homeStats.losses++;
                 awayTeam.cash += PRIZE_MONEY.WIN;
                 awayTeam.seasonIncome.prizes += PRIZE_MONEY.WIN;
+                 if (awayTeam.sponsorId) {
+                    const sponsor = SPONSORS.find(s => s.id === awayTeam.sponsorId);
+                    awayTeam.cash += sponsor.winBonus;
+                    awayTeam.seasonIncome.sponsor += sponsor.winBonus;
+                }
             } else {
                 homeStats.draws++; awayStats.draws++; homeStats.points++; awayStats.points++;
                 homeTeam.cash += PRIZE_MONEY.DRAW;
@@ -611,7 +626,7 @@
                     const pos = [POSITIONS.DEFENDER, POSITIONS.MIDFIELDER, POSITIONS.ATTACKER][getRandomInt(0, 2)];
                     team.players.push(generatePlayer(team.id, pos));
                 }
-                team.seasonIncome = {prizes: 0, tickets: 0};
+                team.seasonIncome = {prizes: 0, tickets: 0, sponsor: 0};
             });
             gameState.endOfSeasonReport = report;
         }
@@ -624,7 +639,7 @@
             createLeagueTable();
             generateFixtures();
             gameState.teams.forEach(setInitialLineup);
-            changeView('dashboard');
+            changeView('sponsorship-selection');
         }
 
         function buyPlayer(playerId) {
@@ -845,6 +860,18 @@
             render();
         }
 
+        function selectSponsor(sponsorId) {
+            const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            const sponsor = SPONSORS.find(s => s.id === sponsorId);
+            if (team && sponsor) {
+                team.sponsorId = sponsorId;
+                team.cash += sponsor.fixedValue;
+                team.seasonIncome.sponsor += sponsor.fixedValue;
+                showNotification(`Contrato assinado com ${sponsor.name}!`, "success");
+                changeView('dashboard');
+            }
+        }
+
         function startNewGameFlow() {
             gameState.teams = [];
             gameState.playerStats = [];
@@ -880,11 +907,11 @@
 
         function selectTeam(teamId) {
             gameState.playerTeamId = teamId;
-            changeView('dashboard');
+            changeView('sponsorship-selection');
         }
 
         function changeView(newView, options = {}) {
-            if (gameState.playerTeamId === null && !['team-selection', 'welcome-screen'].includes(newView)) return;
+            if (gameState.playerTeamId === null && !['team-selection', 'welcome-screen', 'sponsorship-selection'].includes(newView)) return;
             gameState.view = newView;
             if (newView === 'transfers' && options.tab) { gameState.transferMarket.activeTab = options.tab; }
             if (newView === 'statistics' && options.tab) { gameState.statsView.activeTab = options.tab; }
@@ -950,6 +977,7 @@
                 case 'academy': renderAcademy(); break;
                 case 'stadium': renderStadium(); break;
                 case 'morale': renderTeamMorale(); break;
+                case 'sponsorship-selection': renderSponsorshipSelection(); break;
                 default: renderTeamSelection();
             }
             if (gameState.playerTeamId !== null) {
@@ -1194,7 +1222,7 @@
 
         function renderFinances() {
             const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
-            const totalIncome = team.seasonIncome.prizes + team.seasonIncome.tickets;
+            const totalIncome = team.seasonIncome.prizes + team.seasonIncome.tickets + team.seasonIncome.sponsor;
 
             const container = document.createElement('div');
             container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
@@ -1217,6 +1245,7 @@
                         <p class="text-3xl font-bold text-green-700">R$ ${totalIncome.toLocaleString('pt-BR')}</p>
                         <p class="text-sm text-green-600">(Prêmios: R$ ${team.seasonIncome.prizes.toLocaleString('pt-BR')})</p>
                         <p class="text-sm text-green-600">(Ingressos: R$ ${team.seasonIncome.tickets.toLocaleString('pt-BR')})</p>
+                        <p class="text-sm text-green-600">(Patrocínio: R$ ${team.seasonIncome.sponsor.toLocaleString('pt-BR')})</p>
                     </div>
                 </div>
                 <h3 class="text-xl font-bold mt-8 mb-2">Folha Salarial Detalhada</h3>
@@ -1505,6 +1534,28 @@
                         `;
                     }
                 )}
+            `;
+            mainContent.appendChild(container);
+        }
+        
+        function renderSponsorshipSelection() {
+            const container = document.createElement('div');
+            container.className = "bg-white shadow-md rounded-lg p-6";
+            container.innerHTML = `
+                <h2 class="text-2xl font-bold mb-4 text-center">Escolha seu Patrocinador para a Temporada ${gameState.currentYear}</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+                    ${SPONSORS.map(s => `
+                        <div class="border rounded-lg p-4 flex flex-col text-center hover:shadow-xl transition-shadow">
+                            <h3 class="text-xl font-bold text-blue-600">${s.name}</h3>
+                            <p class="text-gray-600 my-2 flex-grow">${s.description}</p>
+                            <div class="my-4">
+                                <p class="text-lg font-semibold">Valor Fixo: <span class="text-green-600">R$ ${s.fixedValue.toLocaleString('pt-BR')}</span></p>
+                                <p class="text-lg font-semibold">Bônus por Vitória: <span class="text-green-600">R$ ${s.winBonus.toLocaleString('pt-BR')}</span></p>
+                            </div>
+                            <button onclick="selectSponsor(${s.id})" class="mt-auto w-full px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition">Assinar Contrato</button>
+                        </div>
+                    `).join('')}
+                </div>
             `;
             mainContent.appendChild(container);
         }
