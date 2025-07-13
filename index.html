@@ -193,6 +193,7 @@
                 statsView: { activeTab: 'scorers'},
                 dragAndDrop: { draggedPlayerId: null },
                 endOfSeasonReport: { improved: [], declined: [], retired: [], prize: 0, newYouth: [], awards: {} },
+                matchSimulation: { match: null, commentary: [], interval: null },
                 sorting: {
                     league: { key: 'points', order: 'desc' },
                     finances: { key: 'salary', order: 'desc' },
@@ -208,7 +209,10 @@
         // --- SAVE/LOAD LOGIC ---
         function saveGame() {
             try {
-                localStorage.setItem(SAVE_KEY, JSON.stringify(gameState));
+                const stateToSave = { ...gameState };
+                // Don't save transient state like intervals
+                delete stateToSave.matchSimulation.interval;
+                localStorage.setItem(SAVE_KEY, JSON.stringify(stateToSave));
             } catch (e) {
                 console.error("Não foi possível salvar o jogo.", e);
                 showNotification("Erro ao salvar o jogo. Seu navegador pode estar com o modo de navegação anônima ou armazenamento cheio.", "error");
@@ -343,11 +347,12 @@
         }
 
         function assignGoals(team, goals) {
+            const scorers = [];
             const attackers = team.players.filter(p => team.startingXI.includes(p.id) && p.position === POSITIONS.ATTACKER);
             const midfielders = team.players.filter(p => team.startingXI.includes(p.id) && p.position === POSITIONS.MIDFIELDER);
             const potentialScorers = [...attackers, ...midfielders, ...team.players.filter(p => team.startingXI.includes(p.id))];
 
-            if (potentialScorers.length === 0) return;
+            if (potentialScorers.length === 0) return [];
 
             for(let i=0; i<goals; i++) {
                 const scorer = potentialScorers[Math.floor(Math.random() * potentialScorers.length)];
@@ -357,18 +362,25 @@
                 } else {
                     gameState.playerStats.push({ playerId: scorer.id, name: scorer.name, teamName: team.name, goals: 1 });
                 }
+                scorers.push(scorer);
             }
+            return scorers;
         }
 
         function calculateMatchRatings(homeTeam, awayTeam, homeGoals, awayGoals) {
-            const homePlayers = homeTeam.players.filter(p => homeTeam.startingXI.includes(p.id) || homeTeam.reserves.includes(p.id));
-            const awayPlayers = awayTeam.players.filter(p => awayTeam.startingXI.includes(p.id) || awayTeam.reserves.includes(p.id));
+            const playersInMatch = [...homeTeam.players.filter(p => homeTeam.startingXI.includes(p.id) || homeTeam.reserves.includes(p.id)), ...awayTeam.players.filter(p => awayTeam.startingXI.includes(p.id) || awayTeam.reserves.includes(p.id))];
             
-            homePlayers.forEach(player => {
-                const played = homeTeam.startingXI.includes(player.id);
+            playersInMatch.forEach(player => {
+                const played = homeTeam.startingXI.includes(player.id) || awayTeam.startingXI.includes(player.id);
                 if (played) {
                     let rating = 5.0 + (player.skill - 60) / 10;
-                    if (homeGoals > awayGoals) rating += 0.5; else if (homeGoals < awayGoals) rating -= 0.3; else rating += 0.2;
+                    if ((player.teamId === homeTeam.id && homeGoals > awayGoals) || (player.teamId === awayTeam.id && awayGoals > homeGoals)) {
+                        rating += 0.5;
+                    } else if (homeGoals === awayGoals) {
+                        rating += 0.2;
+                    } else {
+                        rating -= 0.3;
+                    }
                     rating += (Math.random() - 0.5);
                     player.matchRatings.push(parseFloat(Math.max(4.0, Math.min(10.0, rating)).toFixed(1)));
                     player.morale = Math.min(100, player.morale + (homeGoals > awayGoals ? 5 : (homeGoals === awayGoals ? 1 : -5)));
@@ -376,52 +388,63 @@
                     player.morale = Math.max(0, player.morale - 1);
                 }
             });
-
-            awayPlayers.forEach(player => {
-                const played = awayTeam.startingXI.includes(player.id);
-                if (played) {
-                    let rating = 5.0 + (player.skill - 60) / 10;
-                    if (awayGoals > homeGoals) rating += 0.5; else if (awayGoals < homeGoals) rating -= 0.3; else rating += 0.2;
-                    rating += (Math.random() - 0.5);
-                    player.matchRatings.push(parseFloat(Math.max(4.0, Math.min(10.0, rating)).toFixed(1)));
-                    player.morale = Math.min(100, player.morale + (awayGoals > homeGoals ? 5 : (awayGoals === homeGoals ? 1 : -5)));
-                } else {
-                    player.morale = Math.max(0, player.morale - 1);
-                }
-            });
         }
 
-        function simulateMatch(match) {
+        function simulateMatch(match, detailed = false) {
             const homeTeam = gameState.teams.find(t => t.id === match.homeTeamId);
             const awayTeam = gameState.teams.find(t => t.id === match.awayTeamId);
             const homeStrength = getTeamStrength(match.homeTeamId);
             const awayStrength = getTeamStrength(match.awayTeamId);
             const homeAdvantage = 1.1;
-            const homeGoalChance = (homeStrength.attack / awayStrength.defense) * homeAdvantage;
-            const awayGoalChance = (awayStrength.attack / homeStrength.defense);
-            const homeGoals = Math.floor(Math.random() * (homeGoalChance * 2.5));
-            const awayGoals = Math.floor(Math.random() * (awayGoalChance * 2.5));
+            
+            let homeGoals = 0;
+            let awayGoals = 0;
+            const commentary = [];
+            const events = { injuries: [], suspensions: [] };
 
-            assignGoals(homeTeam, homeGoals);
-            assignGoals(awayTeam, awayGoals);
+            if (detailed) {
+                commentary.push({ minute: 0, text: "Começa a partida!" });
+                for (let minute = 1; minute <= 90; minute++) {
+                    if (minute === 45) commentary.push({ minute: 45, text: "Intervalo de jogo." });
+                    
+                    const homeChance = Math.random() < (homeStrength.attack / awayStrength.defense) * homeAdvantage / 45;
+                    const awayChance = Math.random() < (awayStrength.attack / homeStrength.defense) / 45;
+                    
+                    if (homeChance) {
+                        homeGoals++;
+                        const scorer = assignGoals(homeTeam, 1)[0];
+                        commentary.push({ minute, text: `GOL! ${scorer.name} marca para ${homeTeam.name}!`, type: 'goal' });
+                    }
+                    if (awayChance) {
+                        awayGoals++;
+                        const scorer = assignGoals(awayTeam, 1)[0];
+                        commentary.push({ minute, text: `GOL! ${scorer.name} marca para ${awayTeam.name}!`, type: 'goal' });
+                    }
+                }
+                commentary.push({ minute: 90, text: "Fim de jogo!" });
+            } else {
+                 homeGoals = Math.floor(Math.random() * ((homeStrength.attack / awayStrength.defense) * homeAdvantage * 2.5));
+                 awayGoals = Math.floor(Math.random() * ((awayStrength.attack / homeStrength.defense) * 2.5));
+                 assignGoals(homeTeam, homeGoals);
+                 assignGoals(awayTeam, awayGoals);
+            }
+
             calculateMatchRatings(homeTeam, awayTeam, homeGoals, awayGoals);
             
-            const matchEvents = { injuries: [], suspensions: [] };
             const playersInMatch = [...homeTeam.players.filter(p => homeTeam.startingXI.includes(p.id)), ...awayTeam.players.filter(p => awayTeam.startingXI.includes(p.id))];
-
             playersInMatch.forEach(player => {
                 if (player.injuryTurns > 0 || player.isSuspended) return;
                 if (Math.random() < 0.015) {
                     player.injuryTurns = getRandomInt(1, 4);
-                    matchEvents.injuries.push({ name: player.name, teamId: player.teamId, turns: player.injuryTurns });
+                    events.injuries.push({ name: player.name, teamId: player.teamId, turns: player.injuryTurns });
                 }
                 if (Math.random() < 0.02) {
                     player.isSuspended = true;
-                    matchEvents.suspensions.push({ name: player.name, teamId: player.teamId });
+                    events.suspensions.push({ name: player.name, teamId: player.teamId });
                 }
             });
 
-            return { ...match, homeGoals, awayGoals, events: matchEvents };
+            return { ...match, homeGoals, awayGoals, events, commentary };
         }
         
         function updateTableWithResult(result) {
@@ -503,24 +526,23 @@
             
             processPostRoundUpdates();
 
-            const isLastRound = gameState.currentRound === gameState.fixtures.length;
-            
             const currentFixtures = gameState.fixtures[gameState.currentRound - 1];
-            const results = currentFixtures.map(match => simulateMatch(match));
-            results.forEach(result => updateTableWithResult(result));
-            gameState.lastRoundResults = results;
+            const playerMatch = currentFixtures.find(m => m.homeTeamId === gameState.playerTeamId || m.awayTeamId === gameState.playerTeamId);
             
-            if (gameState.currentRound % 4 === 0 && !isLastRound) {
-                processMonthlyFinances();
-            }
+            gameState.lastRoundResults = [];
 
-            if (isLastRound) {
-                handleEndOfSeason();
-                changeView('end-of-season');
-            } else {
-                gameState.currentRound++;
-                changeView('round-results');
-            }
+            // Simulate AI vs AI matches in the background
+            currentFixtures.forEach(match => {
+                if (match !== playerMatch) {
+                    const result = simulateMatch(match, false);
+                    gameState.lastRoundResults.push(result);
+                    updateTableWithResult(result);
+                }
+            });
+
+            // Prepare for detailed player match simulation
+            gameState.matchSimulation.match = playerMatch;
+            changeView('match-commentary');
         }
         
         function calculateIndividualAwards() {
@@ -978,9 +1000,10 @@
                 case 'stadium': renderStadium(); break;
                 case 'morale': renderTeamMorale(); break;
                 case 'sponsorship-selection': renderSponsorshipSelection(); break;
+                case 'match-commentary': renderMatchCommentary(); break;
                 default: renderTeamSelection();
             }
-            if (gameState.playerTeamId !== null) {
+            if (gameState.playerTeamId !== null && gameState.view !== 'team-selection' && gameState.view !== 'welcome-screen') {
                  const playerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
                  document.getElementById('team-info').innerHTML = `<h3 class="font-semibold text-lg">${playerTeam.name}</h3><p class="text-sm text-green-600">Caixa: R$ ${playerTeam.cash.toLocaleString('pt-BR')}</p>`;
                  saveGame();
@@ -1558,6 +1581,66 @@
                 </div>
             `;
             mainContent.appendChild(container);
+        }
+        
+        function renderMatchCommentary() {
+            const { match } = gameState.matchSimulation;
+            const homeTeam = gameState.teams.find(t => t.id === match.homeTeamId);
+            const awayTeam = gameState.teams.find(t => t.id === match.awayTeamId);
+
+            const container = document.createElement('div');
+            container.className = "bg-white shadow-md rounded-lg p-6";
+            container.innerHTML = `
+                <div class="text-center mb-4">
+                    <h2 class="text-2xl font-bold">Dia de Jogo!</h2>
+                    <p class="text-lg">${homeTeam.name} vs ${awayTeam.name}</p>
+                </div>
+                <div id="commentary-box" class="h-64 bg-gray-800 text-white font-mono text-sm p-4 rounded-lg overflow-y-auto">
+                    <!-- Commentary will appear here -->
+                </div>
+                <button id="start-match-btn" onclick="runMatchSimulation()" class="w-full mt-4 p-3 bg-green-500 text-white rounded-lg font-bold hover:bg-green-600 transition shadow">Iniciar Partida</button>
+            `;
+            mainContent.appendChild(container);
+        }
+
+        function runMatchSimulation() {
+            const startBtn = document.getElementById('start-match-btn');
+            if (startBtn) startBtn.style.display = 'none';
+
+            const commentaryBox = document.getElementById('commentary-box');
+            const match = gameState.matchSimulation.match;
+            const result = simulateMatch(match, true);
+            gameState.lastRoundResults.push(result);
+            updateTableWithResult(result);
+
+            let i = 0;
+            gameState.matchSimulation.interval = setInterval(() => {
+                if (i < result.commentary.length) {
+                    const event = result.commentary[i];
+                    const p = document.createElement('p');
+                    p.innerHTML = `<span class="text-gray-400">${event.minute}'</span> - ${event.text}`;
+                    if (event.type === 'goal') p.classList.add('text-yellow-400', 'font-bold');
+                    commentaryBox.appendChild(p);
+                    commentaryBox.scrollTop = commentaryBox.scrollHeight;
+                    i++;
+                } else {
+                    clearInterval(gameState.matchSimulation.interval);
+                    const continueBtn = document.createElement('button');
+                    continueBtn.textContent = 'Ver Resultados da Rodada';
+                    continueBtn.className = 'w-full mt-4 p-3 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 transition shadow';
+                    continueBtn.onclick = () => {
+                        const isLastRound = gameState.currentRound === gameState.fixtures.length;
+                        if (isLastRound) {
+                            handleEndOfSeason();
+                            changeView('end-of-season');
+                        } else {
+                            gameState.currentRound++;
+                            changeView('round-results');
+                        }
+                    };
+                    mainContent.appendChild(continueBtn);
+                }
+            }, 100);
         }
 
         // --- GAME START ---
