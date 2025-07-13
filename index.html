@@ -188,6 +188,7 @@
                 conversationsLeft: 5,
                 talkedToPlayers: [],
                 lastRoundResults: [],
+                isTransferWindowOpen: true,
                 view: 'team-selection',
                 transferMarket: { activeTab: 'buy' },
                 statsView: { activeTab: 'scorers'},
@@ -210,7 +211,6 @@
         function saveGame() {
             try {
                 const stateToSave = { ...gameState };
-                // Don't save transient state like intervals
                 delete stateToSave.matchSimulation.interval;
                 localStorage.setItem(SAVE_KEY, JSON.stringify(stateToSave));
             } catch (e) {
@@ -239,7 +239,8 @@
             const name = `${FIRST_NAMES[getRandomInt(0, FIRST_NAMES.length - 1)]} ${LAST_NAMES[getRandomInt(0, LAST_NAMES.length - 1)]}`;
             const age = isYouth ? getRandomInt(16, 18) : getRandomInt(18, 34);
             const skill = isYouth ? getRandomInt(30, 55) : getRandomInt(40, 85);
-            const player = { id: crypto.randomUUID(), name, age, position, skill, strength: getRandomInt(40, 85), value: getRandomInt(100, 5000) * 1000, teamId, injuryTurns: 0, isSuspended: false, salary: Math.floor(skill * 1000 + getRandomInt(500, 2000)), matchRatings: [], morale: 50, salaryAdjustedThisSeason: false };
+            const contractYears = getRandomInt(1, 5);
+            const player = { id: crypto.randomUUID(), name, age, position, skill, strength: getRandomInt(40, 85), value: getRandomInt(100, 5000) * 1000, teamId, injuryTurns: 0, isSuspended: false, salary: Math.floor(skill * 1000 + getRandomInt(500, 2000)), matchRatings: [], morale: 50, salaryAdjustedThisSeason: false, contractYears, contractEndYear: gameState.currentYear + contractYears };
             if (!isYouth) {
                 gameState.playerStats.push({ playerId: player.id, name: player.name, teamName: TEAM_NAMES[teamId], goals: 0 });
             }
@@ -259,7 +260,7 @@
                 youthPlayers.push(generatePlayer(id, pos, true));
             }
 
-            const team = { id, name, players, cash: getRandomInt(5, 15) * 1000000, tactic: '4-4-2', startingXI: [], reserves: [], seasonIncome: {prizes: 0, tickets: 0, sponsor: 0}, youthAcademyLevel: 1, youthPlayers, stadiumLevel: 1, sponsorId: null };
+            const team = { id, name, players, cash: getRandomInt(5, 15) * 1000000, tactic: '4-4-2', startingXI: [], reserves: [], seasonIncome: {prizes: 0, tickets: 0, sponsor: 0}, youthAcademyLevel: 1, youthPlayers, stadiumLevel: 1, sponsorId: null, boardObjectives: {} };
             setInitialLineup(team);
             return team;
         }
@@ -525,7 +526,7 @@
             if (gameState.currentRound > gameState.fixtures.length) { return; }
             
             processPostRoundUpdates();
-
+            
             const currentFixtures = gameState.fixtures[gameState.currentRound - 1];
             const playerMatch = currentFixtures.find(m => m.homeTeamId === gameState.playerTeamId || m.awayTeamId === gameState.playerTeamId);
             
