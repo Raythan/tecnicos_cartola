@@ -170,6 +170,7 @@
             { id: 3, name: 'Risco e Glória', description: 'Baixa renda fixa, mas com bônus generosos por vitória.', fixedValue: 1000000, winBonus: 120000 },
         ];
         const SAVE_KEY = 'tecnicosCartolaSave';
+        const FINANCIAL_FAIR_PLAY_SALARY_CAP = 0.70; // 70% of income
 
         // --- GAME STATE ---
         let gameState = {};
@@ -188,12 +189,13 @@
                 conversationsLeft: 5,
                 talkedToPlayers: [],
                 lastRoundResults: [],
+                roundPositionsBefore: {},
                 isTransferWindowOpen: true,
                 view: 'team-selection',
                 transferMarket: { activeTab: 'buy' },
                 statsView: { activeTab: 'scorers'},
                 dragAndDrop: { draggedPlayerId: null },
-                endOfSeasonReport: { improved: [], declined: [], retired: [], prize: 0, newYouth: [], awards: {} },
+                endOfSeasonReport: { improved: [], declined: [], retired: [], prize: 0, newYouth: [], awards: {}, ffpPunishments: [], objectivesResult: [] },
                 matchSimulation: { match: null, commentary: [], interval: null },
                 sorting: {
                     league: { key: 'points', order: 'desc' },
@@ -202,7 +204,8 @@
                     'transfers-sell': { key: 'value', order: 'desc' },
                     scorers: { key: 'goals', order: 'desc' },
                     academy: { key: 'skill', order: 'desc' },
-                    morale: { key: 'name', order: 'asc' }
+                    morale: { key: 'name', order: 'asc' },
+                    renewals: { key: 'skill', order: 'desc' },
                 }
             };
         }
@@ -223,6 +226,16 @@
             const savedGame = localStorage.getItem(SAVE_KEY);
             if (savedGame) {
                 gameState = JSON.parse(savedGame);
+                // Ensure new properties exist on loaded save
+                if (!gameState.endOfSeasonReport) {
+                    gameState.endOfSeasonReport = { objectivesResult: [] };
+                } else if (!gameState.endOfSeasonReport.objectivesResult) {
+                     gameState.endOfSeasonReport.objectivesResult = [];
+                }
+                
+                gameState.teams.forEach(t => {
+                    if (t.boardObjectives === undefined) t.boardObjectives = [];
+                });
                 return true;
             }
             return false;
@@ -240,7 +253,7 @@
             const age = isYouth ? getRandomInt(16, 18) : getRandomInt(18, 34);
             const skill = isYouth ? getRandomInt(30, 55) : getRandomInt(40, 85);
             const contractYears = getRandomInt(1, 5);
-            const player = { id: crypto.randomUUID(), name, age, position, skill, strength: getRandomInt(40, 85), value: getRandomInt(100, 5000) * 1000, teamId, injuryTurns: 0, isSuspended: false, salary: Math.floor(skill * 1000 + getRandomInt(500, 2000)), matchRatings: [], morale: 50, salaryAdjustedThisSeason: false, contractYears, contractEndYear: gameState.currentYear + contractYears };
+            const player = { id: crypto.randomUUID(), name, age, position, skill, strength: getRandomInt(40, 85), value: getRandomInt(100, 5000) * 1000, teamId, injuryTurns: 0, isSuspended: false, salary: Math.floor(skill * 1000 + getRandomInt(500, 2000)), matchRatings: [], morale: 50, salaryAdjustedThisSeason: false, contractEndYear: gameState.currentYear + contractYears };
             if (!isYouth) {
                 gameState.playerStats.push({ playerId: player.id, name: player.name, teamName: TEAM_NAMES[teamId], goals: 0 });
             }
@@ -260,7 +273,7 @@
                 youthPlayers.push(generatePlayer(id, pos, true));
             }
 
-            const team = { id, name, players, cash: getRandomInt(5, 15) * 1000000, tactic: '4-4-2', startingXI: [], reserves: [], seasonIncome: {prizes: 0, tickets: 0, sponsor: 0}, youthAcademyLevel: 1, youthPlayers, stadiumLevel: 1, sponsorId: null, boardObjectives: {} };
+            const team = { id, name, players, cash: getRandomInt(5, 15) * 1000000, tactic: '4-4-2', startingXI: [], reserves: [], seasonIncome: {prizes: 0, tickets: 0, sponsor: 0}, youthAcademyLevel: 1, youthPlayers, stadiumLevel: 1, sponsorId: null, boardObjectives: [], transferEmbargo: false, pointDeductionNextSeason: 0 };
             setInitialLineup(team);
             return team;
         }
@@ -295,7 +308,11 @@
         }
 
         function createLeagueTable() {
-            gameState.leagueTable = gameState.teams.map(team => ({ teamId: team.id, teamName: team.name, played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, goalDifference: 0, points: 0 }));
+            gameState.leagueTable = gameState.teams.map(team => {
+                const startingPoints = -team.pointDeductionNextSeason;
+                team.pointDeductionNextSeason = 0; // Reset for the new season
+                return { teamId: team.id, teamName: team.name, played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, goalDifference: 0, points: startingPoints };
+            });
         }
 
         function generateFixtures() {
@@ -525,6 +542,18 @@
         function simulateRound() {
             if (gameState.currentRound > gameState.fixtures.length) { return; }
             
+            const sortedTableBefore = [...gameState.leagueTable].sort((a, b) => b.points - a.points || (b.goalDifference - a.goalDifference) || a.teamName.localeCompare(b.teamName));
+            gameState.roundPositionsBefore = {};
+            sortedTableBefore.forEach((team, index) => {
+                gameState.roundPositionsBefore[team.teamId] = index + 1;
+            });
+
+            if(gameState.currentRound === 1 || gameState.currentRound === 20) {
+                gameState.isTransferWindowOpen = true;
+            } else {
+                gameState.isTransferWindowOpen = false;
+            }
+
             processPostRoundUpdates();
             
             const currentFixtures = gameState.fixtures[gameState.currentRound - 1];
@@ -532,7 +561,6 @@
             
             gameState.lastRoundResults = [];
 
-            // Simulate AI vs AI matches in the background
             currentFixtures.forEach(match => {
                 if (match !== playerMatch) {
                     const result = simulateMatch(match, false);
@@ -541,7 +569,6 @@
                 }
             });
 
-            // Prepare for detailed player match simulation
             gameState.matchSimulation.match = playerMatch;
             changeView('match-commentary');
         }
@@ -587,28 +614,98 @@
             };
         }
 
+        function checkFinancialFairPlay() {
+            const punishments = [];
+            gameState.teams.forEach(team => {
+                const totalSalary = team.players.reduce((sum, p) => sum + p.salary, 0) * 12; // Annual salary
+                const totalIncome = team.seasonIncome.prizes + team.seasonIncome.tickets + team.seasonIncome.sponsor;
+                
+                if (totalIncome > 0 && totalSalary > (totalIncome * FINANCIAL_FAIR_PLAY_SALARY_CAP)) {
+                    team.transferEmbargo = true;
+                    team.pointDeductionNextSeason = 5;
+                    punishments.push({
+                        teamName: team.name,
+                        reason: `gastou ${Math.round((totalSalary / totalIncome) * 100)}% da sua receita em salários.`
+                    });
+                } else {
+                    team.transferEmbargo = false;
+                }
+            });
+            return punishments;
+        }
+
+        // ##### NEW FUNCTIONS FOR OBJECTIVES #####
+        function generateBoardObjectives(team) {
+            const lastSeason = gameState.managerHistory.find(h => h.year === gameState.currentYear - 1);
+            const lastPosition = lastSeason ? lastSeason.position : 10; // Default to mid-table for first season
+
+            let leagueTarget;
+            if (lastPosition <= 4) {
+                leagueTarget = { type: 'league_position', target: 1, text: 'Ser campeão da liga' };
+            } else if (lastPosition <= 10) {
+                leagueTarget = { type: 'league_position', target: 4, text: 'Terminar entre os 4 primeiros' };
+            } else if (lastPosition <= 16) {
+                leagueTarget = { type: 'league_position', target: 10, text: 'Terminar na metade de cima da tabela' };
+            } else {
+                leagueTarget = { type: 'league_position', target: 16, text: 'Evitar o rebaixamento' };
+            }
+
+            const financialTarget = { type: 'financial', target: 'positive_balance', text: 'Terminar a temporada com o caixa positivo' };
+            
+            team.boardObjectives = [leagueTarget, financialTarget];
+        }
+
+        function checkObjectivesCompletion(team, finalPosition) {
+            let allMet = true;
+            const results = team.boardObjectives.map(obj => {
+                let met = false;
+                if (obj.type === 'league_position') {
+                    met = finalPosition <= obj.target;
+                } else if (obj.type === 'financial') {
+                    met = team.cash > 0;
+                }
+                if (!met) allMet = false;
+                return { text: obj.text, met };
+            });
+            return { allMet, results };
+        }
+
+
         function handleEndOfSeason() {
-            const report = { improved: [], declined: [], retired: [], prize: 0, newYouth: [], awards: {} };
+            const report = { improved: [], declined: [], retired: [], prize: 0, newYouth: [], awards: {}, ffpPunishments: [], objectivesResult: [] };
             
             report.awards = calculateIndividualAwards();
             gameState.awardsHistory.push({ year: gameState.currentYear, ...report.awards });
             
-            const sortedTable = [...gameState.leagueTable].sort((a, b) => b.points - a.points || (b.goalDifference - a.goalDifference));
+            const playerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            const sortedTable = [...gameState.leagueTable].sort((a, b) => b.points - a.points || (b.goalDifference - a.goalDifference) || a.teamName.localeCompare(b.teamName));
+            let playerFinalPosition = 0;
+
             sortedTable.forEach((entry, index) => {
                 const team = gameState.teams.find(t => t.id === entry.teamId);
                 const prize = Math.max(0, (20 - index) * 500000);
                 team.cash += prize;
                 if (team.id === gameState.playerTeamId) {
+                    playerFinalPosition = index + 1;
                     report.prize = prize;
-                    const playerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
                     gameState.managerHistory.push({
                         year: gameState.currentYear,
                         teamName: playerTeam.name,
-                        position: index + 1,
+                        position: playerFinalPosition,
                         champion: index === 0
                     });
                 }
             });
+
+            report.ffpPunishments = checkFinancialFairPlay();
+            const objectivesCheck = checkObjectivesCompletion(playerTeam, playerFinalPosition);
+            report.objectivesResult = objectivesCheck.results;
+
+            if (!objectivesCheck.allMet) {
+                gameState.endOfSeasonReport = report;
+                changeView('game-over');
+                return;
+            }
 
             gameState.teams.forEach(team => {
                 const retiredPlayers = [];
@@ -673,6 +770,12 @@
             }
             const buyerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
             if (!playerToBuy || !sellerTeam || !buyerTeam || sellerTeam.id === buyerTeam.id) return;
+
+            if (buyerTeam.transferEmbargo) {
+                showNotification("Seu time está sob um embargo de transferências e não pode comprar jogadores.", 'error');
+                return;
+            }
+
             if (buyerTeam.cash >= playerToBuy.value) {
                 buyerTeam.cash -= playerToBuy.value;
                 sellerTeam.cash += playerToBuy.value;
@@ -698,7 +801,7 @@
             if (sellerTeam.players.length <= MIN_SQUAD_SIZE) { showNotification(`Venda bloqueada. Mínimo de ${MIN_SQUAD_SIZE} jogadores.`, 'error'); return; }
             const goalkeepers = sellerTeam.players.filter(p => p.position === POSITIONS.GOALKEEPER);
             if (playerToSell.position === POSITIONS.GOALKEEPER && goalkeepers.length <= MIN_GOALKEEPERS) { showNotification(`Venda bloqueada. Mínimo de ${MIN_GOALKEEPERS} goleiros.`, 'error'); return; }
-            const potentialBuyers = gameState.teams.filter(t => t.id !== sellerTeam.id && t.cash >= playerToSell.value);
+            const potentialBuyers = gameState.teams.filter(t => t.id !== sellerTeam.id && t.cash >= playerToSell.value && !t.transferEmbargo);
             if (potentialBuyers.length > 0) {
                 const buyerTeam = potentialBuyers[getRandomInt(0, potentialBuyers.length - 1)];
                 sellerTeam.cash += playerToSell.value;
@@ -714,9 +817,48 @@
                 showNotification(`Jogador ${playerToSell.name} vendido para ${buyerTeam.name}!`, 'success');
                 render();
             } else {
-                showNotification("Nenhum time tem dinheiro para comprar este jogador.", 'error');
+                showNotification("Nenhum time tem dinheiro ou pode comprar este jogador.", 'error');
             }
         }
+
+        function renewContract(playerId) {
+            const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            const player = team.players.find(p => p.id === playerId);
+            if (!player) return;
+
+            const salaryIncrease = 1 + (getRandomInt(10, 25) / 100); // 10-25% raise
+            const newContractLength = getRandomInt(1, 4);
+
+            player.salary = Math.ceil(player.salary * salaryIncrease);
+            player.contractEndYear = gameState.currentYear + newContractLength;
+            player.morale = Math.min(100, player.morale + 25); // Renewal bonus morale
+
+            showNotification(`${player.name} renovou por mais ${newContractLength} ano(s)!`, 'success');
+            render(); // Re-render the contract renewals screen
+        }
+
+        function releasePlayer(playerId) {
+            const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            const player = team.players.find(p => p.id === playerId);
+            if (!player) return;
+
+            if (team.players.length <= MIN_SQUAD_SIZE) {
+                showNotification(`Não é possível dispensar ${player.name}. Mínimo de ${MIN_SQUAD_SIZE} jogadores necessários.`, 'error');
+                return;
+            }
+            const goalkeepers = team.players.filter(p => p.position === POSITIONS.GOALKEEPER);
+            if (player.position === POSITIONS.GOALKEEPER && goalkeepers.length <= MIN_GOALKEEPERS) {
+                showNotification(`Não é possível dispensar ${player.name}. Mínimo de ${MIN_GOALKEEPERS} goleiros necessários.`, 'error');
+                return;
+            }
+
+            team.players = team.players.filter(p => p.id !== playerId);
+            gameState.playerStats = gameState.playerStats.filter(ps => ps.playerId !== playerId);
+            
+            showNotification(`${player.name} foi dispensado do clube.`, 'info');
+            render(); // Re-render the contract renewals screen
+        }
+
 
         function changeFormation(formation) {
             const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
@@ -891,7 +1033,9 @@
                 team.cash += sponsor.fixedValue;
                 team.seasonIncome.sponsor += sponsor.fixedValue;
                 showNotification(`Contrato assinado com ${sponsor.name}!`, "success");
-                changeView('dashboard');
+                
+                generateBoardObjectives(team);
+                changeView('board-meeting');
             }
         }
 
@@ -934,7 +1078,7 @@
         }
 
         function changeView(newView, options = {}) {
-            if (gameState.playerTeamId === null && !['team-selection', 'welcome-screen', 'sponsorship-selection'].includes(newView)) return;
+            if (gameState.playerTeamId === null && !['team-selection', 'welcome-screen', 'sponsorship-selection', 'board-meeting', 'game-over'].includes(newView)) return;
             gameState.view = newView;
             if (newView === 'transfers' && options.tab) { gameState.transferMarket.activeTab = options.tab; }
             if (newView === 'statistics' && options.tab) { gameState.statsView.activeTab = options.tab; }
@@ -1002,12 +1146,17 @@
                 case 'morale': renderTeamMorale(); break;
                 case 'sponsorship-selection': renderSponsorshipSelection(); break;
                 case 'match-commentary': renderMatchCommentary(); break;
+                case 'contract-renewals': renderContractRenewals(); break;
+                case 'board-meeting': renderBoardMeeting(); break;
+                case 'game-over': renderGameOver(); break;
                 default: renderTeamSelection();
             }
-            if (gameState.playerTeamId !== null && gameState.view !== 'team-selection' && gameState.view !== 'welcome-screen') {
+            if (gameState.playerTeamId !== null && !['team-selection', 'welcome-screen', 'game-over'].includes(gameState.view)) {
                  const playerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
                  document.getElementById('team-info').innerHTML = `<h3 class="font-semibold text-lg">${playerTeam.name}</h3><p class="text-sm text-green-600">Caixa: R$ ${playerTeam.cash.toLocaleString('pt-BR')}</p>`;
                  saveGame();
+            } else {
+                 document.getElementById('team-info').innerHTML = '';
             }
         }
         
@@ -1034,6 +1183,7 @@
         }
 
         function renderDashboard() {
+            const playerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
             const isEndOfSeason = gameState.currentRound > gameState.fixtures.length;
             const buttonText = gameState.currentRound === gameState.fixtures.length ? "Simular Última Rodada" : "Simular Próxima Rodada";
             let nextMatchHTML = '<p class="text-center text-xl font-bold text-green-600">Fim de temporada!</p>';
@@ -1046,25 +1196,55 @@
                     nextMatchHTML = `<div class="flex justify-center items-center space-x-2 sm:space-x-4 text-lg sm:text-xl"><span class="font-bold text-right w-2/5 truncate">${homeTeam.name}</span><span class="text-gray-500">vs</span><span class="font-bold text-left w-2/5 truncate">${awayTeam.name}</span></div>`;
                 }
             }
+            
+            const transferButtonDisabled = !gameState.isTransferWindowOpen || playerTeam.transferEmbargo;
+            const transferButtonTitle = playerTeam.transferEmbargo ? "Bloqueado pelo Fair Play Financeiro" : "";
+
+            let objectivesHTML = '';
+            if (playerTeam.boardObjectives && playerTeam.boardObjectives.length > 0) {
+                const currentPosition = (gameState.leagueTable.sort((a, b) => b.points - a.points || (b.goalDifference - a.goalDifference) || a.teamName.localeCompare(b.teamName)).findIndex(t => t.teamId === playerTeam.id) + 1) || 'N/A';
+                objectivesHTML = `
+                <div class="mt-8 p-4 bg-gray-50 rounded-lg border">
+                    <h3 class="font-bold text-lg mb-2 text-center">Objetivos da Diretoria</h3>
+                    <ul class="list-disc list-inside space-y-2">
+                        ${playerTeam.boardObjectives.map(obj => {
+                            let progress = '';
+                            if (obj.type === 'league_position') {
+                                progress = `(Posição Atual: ${currentPosition}º)`;
+                            } else if (obj.type === 'financial') {
+                                progress = `(Caixa Atual: <span class="font-semibold ${playerTeam.cash >= 0 ? 'text-green-600' : 'text-red-600'}">R$ ${playerTeam.cash.toLocaleString('pt-BR')}</span>)`;
+                            }
+                            return `<li>${obj.text} ${progress}</li>`;
+                        }).join('')}
+                    </ul>
+                </div>`;
+            }
+
             const container = document.createElement('div');
             container.className = "bg-white shadow-md rounded-lg p-6";
             container.innerHTML = `
-                <h2 class="text-2xl font-bold mb-4">Painel Principal</h2>
-                <p>Bem-vindo, técnico! O que você gostaria de fazer?</p>
-                <div class="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-white">
+                <div class="flex flex-wrap gap-4 justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold">Painel Principal</h2>
+                    <div class="flex items-center space-x-2">
+                        <span class="font-semibold">Ano: ${gameState.currentYear}</span>
+                        <span class="font-semibold">Rodada: ${isEndOfSeason ? gameState.fixtures.length : gameState.currentRound}/${gameState.fixtures.length}</span>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-white">
                     <button onclick="changeView('tactics')" class="p-4 bg-blue-500 rounded-lg font-semibold hover:bg-blue-600 transition shadow">Elenco/Táticas</button>
                     <button onclick="changeView('league')" class="p-4 bg-green-500 rounded-lg font-semibold hover:bg-green-600 transition shadow">Campeonato</button>
-                    <button onclick="changeView('transfers')" class="p-4 bg-yellow-500 rounded-lg font-semibold hover:bg-yellow-600 transition shadow">Mercado</button>
+                    <button onclick="changeView('transfers')" class="p-4 bg-yellow-500 rounded-lg font-semibold hover:bg-yellow-600 transition shadow ${transferButtonDisabled ? 'opacity-50 cursor-not-allowed' : ''}" ${transferButtonDisabled ? 'disabled' : ''} title="${transferButtonTitle}">Mercado</button>
                     <button onclick="changeView('finances')" class="p-4 bg-indigo-500 rounded-lg font-semibold hover:bg-indigo-600 transition shadow">Finanças</button>
                     <button onclick="changeView('statistics')" class="p-4 bg-purple-500 rounded-lg font-semibold hover:bg-purple-600 transition shadow">Estatísticas</button>
                     <button onclick="changeView('academy')" class="p-4 bg-teal-500 rounded-lg font-semibold hover:bg-teal-600 transition shadow">Academia</button>
                     <button onclick="changeView('stadium')" class="p-4 bg-orange-500 rounded-lg font-semibold hover:bg-orange-600 transition shadow">Estádio</button>
                     <button onclick="changeView('morale')" class="p-4 bg-pink-500 rounded-lg font-semibold hover:bg-pink-600 transition shadow">Moral do Time</button>
                 </div>
+                ${objectivesHTML}
                 <div class="mt-8 p-4 bg-gray-50 rounded-lg border">
-                    <h3 class="font-bold text-lg mb-2 text-center">Próxima Partida (Rodada ${isEndOfSeason ? gameState.fixtures.length : gameState.currentRound})</h3>
+                    <h3 class="font-bold text-lg mb-2 text-center">Próxima Partida</h3>
                     <div class="py-4">${nextMatchHTML}</div>
-                    <button onclick="${isEndOfSeason ? '' : 'simulateRound()'}" class="w-full mt-4 p-3 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 transition shadow ${isEndOfSeason ? 'opacity-50 cursor-not-allowed' : ''}">${buttonText}</button>
+                    <button onclick="${isEndOfSeason ? `handleEndOfSeason(); changeView('end-of-season')` : 'simulateRound()'}" class="w-full mt-4 p-3 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 transition shadow ${isEndOfSeason ? 'opacity-50 cursor-not-allowed' : ''}">${buttonText}</button>
                 </div>`;
             mainContent.appendChild(container);
         }
@@ -1089,11 +1269,11 @@
                 else if (player.morale < 30) moraleIcon = `<div class="morale-icon" title="Infieliz">😠</div>`;
 
                 return `<div class="player-marker p-1 ${isUnavailable ? 'opacity-70' : ''}" draggable="${!isUnavailable}" ondragstart="handleDragStart(event, '${player.id}')" ondragend="handleDragEnd(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, '${player.id}')">
-                            ${moraleIcon}
-                            <div class="w-10 h-10 rounded-full ${posColors[player.position]} flex items-center justify-center font-bold text-lg mb-1">${player.skill}</div>
-                            <span class="player-name">${player.name.split(' ')[0]}</span>
-                            ${statusIcon}
-                        </div>`;
+                                ${moraleIcon}
+                                <div class="w-10 h-10 rounded-full ${posColors[player.position]} flex items-center justify-center font-bold text-lg mb-1">${player.skill}</div>
+                                <span class="player-name">${player.name.split(' ')[0]}</span>
+                                ${statusIcon}
+                            </div>`;
             };
 
             const startingXIPlayers = team.startingXI.map(getPlayerById);
@@ -1143,16 +1323,16 @@
             container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
             container.innerHTML = `<div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4"><h2 class="text-2xl font-bold">Tabela do Campeonato</h2><button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button></div>${renderTable('league', 
                 [
-                    { header: '#', key: 'position', sortable: false },
-                    { header: 'Time', key: 'teamName' },
-                    { header: 'P', key: 'points', class: 'text-center' },
-                    { header: 'J', key: 'played', class: 'text-center' },
-                    { header: 'V', key: 'wins', class: 'text-center' },
-                    { header: 'E', key: 'draws', class: 'text-center' },
-                    { header: 'D', key: 'losses', class: 'text-center' },
-                    { header: 'GP', key: 'goalsFor', class: 'text-center' },
-                    { header: 'GC', key: 'goalsAgainst', class: 'text-center' },
-                    { header: 'SG', key: 'goalDifference', class: 'text-center' }
+                    { header: '#', key: 'position', sortable: false, tooltip: 'Posição' },
+                    { header: 'Time', key: 'teamName', tooltip: 'Nome do Time' },
+                    { header: 'P', key: 'points', class: 'text-center', tooltip: 'Pontos' },
+                    { header: 'J', key: 'played', class: 'text-center', tooltip: 'Jogos' },
+                    { header: 'V', key: 'wins', class: 'text-center', tooltip: 'Vitórias' },
+                    { header: 'E', key: 'draws', class: 'text-center', tooltip: 'Empates' },
+                    { header: 'D', key: 'losses', class: 'text-center', tooltip: 'Derrotas' },
+                    { header: 'GP', key: 'goalsFor', class: 'text-center', tooltip: 'Gols Pró' },
+                    { header: 'GC', key: 'goalsAgainst', class: 'text-center', tooltip: 'Gols Contra' },
+                    { header: 'SG', key: 'goalDifference', class: 'text-center', tooltip: 'Saldo de Gols' }
                 ],
                 sortedTable.map((entry, index) => ({...entry, position: index + 1})),
                 null,
@@ -1163,6 +1343,29 @@
 
         function renderRoundResults() {
             const playerTeamId = gameState.playerTeamId;
+
+            const stableSort = (a, b) => b.points - a.points || (b.goalDifference - a.goalDifference) || a.teamName.localeCompare(b.teamName);
+            const sortedTableAfter = [...gameState.leagueTable].sort(stableSort);
+            const positionsAfter = {};
+            sortedTableAfter.forEach((team, index) => {
+                positionsAfter[team.teamId] = index + 1;
+            });
+
+            const getPositionChangeIcon = (teamId) => {
+                const oldPosition = gameState.roundPositionsBefore[teamId];
+                const newPosition = positionsAfter[teamId];
+                if (oldPosition && newPosition) {
+                    if (newPosition < oldPosition) {
+                        return `<span class="text-green-500 font-bold text-lg" title="Subiu na tabela!">▲</span>`;
+                    } else if (newPosition > oldPosition) {
+                        return `<span class="text-red-500 font-bold text-lg" title="Desceu na tabela!">▼</span>`;
+                    } else {
+                        return `<span class="text-gray-500 font-bold text-lg" title="Posição mantida.">▬</span>`;
+                    }
+                }
+                return '';
+            };
+
             let eventsHTML = '';
             const injuries = [];
             const suspensions = [];
@@ -1182,7 +1385,12 @@
             }
 
             const isEndOfSeason = gameState.currentRound > gameState.fixtures.length;
-            const buttonText = gameState.currentRound === gameState.fixtures.length ? "Ver Resumo da Temporada" : "Simular Próxima Rodada";
+            const nextRoundButtonText = isEndOfSeason ? "Ver Resumo da Temporada" : "Simular Próxima Rodada";
+            const nextRoundButtonAction = isEndOfSeason ? `handleEndOfSeason();` : `simulateRound()`;
+
+            const playerMatch = gameState.lastRoundResults.find(r => r.homeTeamId === playerTeamId || r.awayTeamId === playerTeamId);
+            const otherMatches = gameState.lastRoundResults.filter(r => r !== playerMatch);
+            const sortedResults = playerMatch ? [playerMatch, ...otherMatches] : gameState.lastRoundResults;
 
             const container = document.createElement('div');
             container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
@@ -1190,12 +1398,27 @@
                 <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4">
                     <h2 class="text-2xl font-bold">Resultados da Rodada ${gameState.currentRound - 1}</h2>
                     <div class="flex items-center space-x-2 mt-3 sm:mt-0">
-                        <button onclick="changeView('dashboard')" class="px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">Voltar ao Painel</button>
-                        <button onclick="${isEndOfSeason ? '' : 'simulateRound()'}" class="px-4 py-2 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 transition shadow ${isEndOfSeason ? 'opacity-50 cursor-not-allowed' : ''}">${buttonText}</button>
+                        <button onclick="changeView('dashboard')" class="px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">Ir para o Painel</button>
+                        <button onclick="${nextRoundButtonAction}" class="px-4 py-2 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 transition shadow">${nextRoundButtonText}</button>
                     </div>
                 </div>
                 <div class="space-y-3">
-                    ${gameState.lastRoundResults.map(result => { const homeTeam = gameState.teams.find(t => t.id === result.homeTeamId); const awayTeam = gameState.teams.find(t => t.id === result.awayTeamId); const isPlayerMatch = homeTeam.id === playerTeamId || awayTeam.id === playerTeamId; return `<div class="flex items-center justify-between p-3 rounded-lg ${isPlayerMatch ? 'bg-blue-100 border border-blue-200' : 'bg-gray-50'}"><span class="w-2/5 text-right truncate ${isPlayerMatch ? 'font-bold' : ''}">${homeTeam.name}</span><span class="mx-3 px-3 py-1 bg-gray-700 text-white rounded-md font-bold text-lg">${result.homeGoals} - ${result.awayGoals}</span><span class="w-2/5 text-left truncate ${isPlayerMatch ? 'font-bold' : ''}">${awayTeam.name}</span></div>` }).join('')}
+                    ${sortedResults.map(result => {
+                        const homeTeam = gameState.teams.find(t => t.id === result.homeTeamId);
+                        const awayTeam = gameState.teams.find(t => t.id === result.awayTeamId);
+                        const isPlayerMatch = homeTeam.id === playerTeamId || awayTeam.id === playerTeamId;
+                        return `<div class="flex items-center justify-between p-3 rounded-lg ${isPlayerMatch ? 'bg-blue-100 border border-blue-200' : 'bg-gray-50'}">
+                                    <span class="w-2/5 text-right truncate font-bold flex justify-end items-center">
+                                        ${homeTeam.name}
+                                        <span class="ml-2 w-4">${getPositionChangeIcon(homeTeam.id)}</span>
+                                    </span>
+                                    <span class="mx-3 px-3 py-1 bg-gray-700 text-white rounded-md font-bold text-lg flex items-center">${result.homeGoals} - ${result.awayGoals}</span>
+                                    <span class="w-2/5 text-left truncate font-bold flex items-center">
+                                        <span class="mr-2 w-4">${getPositionChangeIcon(awayTeam.id)}</span>
+                                        ${awayTeam.name}
+                                    </span>
+                                </div>`
+                    }).join('')}
                 </div>
                 ${eventsHTML}
             `;
@@ -1203,7 +1426,7 @@
         }
 
         function renderEndOfSeason() {
-            const { improved, declined, retired, prize, newYouth, awards } = gameState.endOfSeasonReport;
+            const { improved, declined, retired, prize, newYouth, awards, ffpPunishments, objectivesResult } = gameState.endOfSeasonReport;
             const renderList = (title, players, color) => {
                 if (players.length === 0) return '';
                 return `<div><h3 class="text-lg font-bold mb-2 text-${color}-600">${title}</h3><ul class="list-disc list-inside space-y-1">${players.map(p => `<li>${p.name} ${p.age ? `(Idade: ${p.age})` : ''} <span class="font-bold">${p.change || ''}</span></li>`).join('')}</ul></div>`;
@@ -1216,11 +1439,35 @@
                 return `<div class="text-center"><h3 class="font-bold text-lg text-yellow-600">${title}</h3><p>${player.name} (${teamName})</p><p class="font-semibold">${detail}</p></div>`;
             };
 
+            let ffpHtml = '';
+            if (ffpPunishments && ffpPunishments.length > 0) {
+                ffpHtml = `
+                    <div class="p-4 bg-red-100 border border-red-200 rounded-lg mb-6">
+                        <h3 class="text-xl font-bold text-center mb-4 text-red-800">Punições do Fair Play Financeiro</h3>
+                        <ul class="list-disc list-inside space-y-2 text-red-700">
+                            ${ffpPunishments.map(p => `<li><strong>${p.teamName}:</strong> Começará com -5 pontos e embargo de transferências. Motivo: ${p.reason}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+
+            const objectivesHTML = `
+                <div class="p-4 bg-blue-100 border border-blue-200 rounded-lg mb-6">
+                    <h3 class="text-xl font-bold text-center mb-4 text-blue-800">Avaliação da Diretoria</h3>
+                    <ul class="list-disc list-inside space-y-2">
+                        ${objectivesResult.map(obj => `<li class="${obj.met ? 'text-green-700' : 'text-red-700'}"><span class="font-bold">${obj.met ? 'CUMPRIDO' : 'FALHOU'}:</span> ${obj.text}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+
             const container = document.createElement('div');
             container.className = "bg-white shadow-md rounded-lg p-6";
             container.innerHTML = `
                 <h2 class="text-2xl font-bold mb-4 text-center">Resumo da Temporada ${gameState.currentYear}</h2>
                 
+                ${objectivesHTML}
+                ${ffpHtml}
+
                 <div class="p-4 bg-yellow-100 border border-yellow-200 rounded-lg mb-6">
                     <h3 class="text-xl font-bold text-center mb-4 text-yellow-800">Prêmios da Temporada &#127942;</h3>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1240,13 +1487,14 @@
                     ${renderList('Jogadores que Regrediram', declined, 'yellow')}
                     ${renderList('Jogadores Aposentados', retired, 'red')}
                 </div>
-                <button onclick="startNewSeason()" class="w-full mt-8 p-3 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 transition shadow">Iniciar Nova Temporada</button>`;
+                <button onclick="changeView('contract-renewals')" class="w-full mt-8 p-3 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 transition shadow">Ir para Renovações de Contrato</button>`;
             mainContent.appendChild(container);
         }
 
         function renderFinances() {
             const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
             const totalIncome = team.seasonIncome.prizes + team.seasonIncome.tickets + team.seasonIncome.sponsor;
+            const totalSalary = team.players.reduce((sum, p) => sum + p.salary, 0);
 
             const container = document.createElement('div');
             container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
@@ -1262,7 +1510,7 @@
                     </div>
                     <div class="bg-red-100 p-4 rounded-lg">
                         <h3 class="text-lg font-semibold text-red-800">Despesa Mensal (Salários)</h3>
-                        <p class="text-3xl font-bold text-red-700">R$ ${team.players.reduce((sum, p) => sum + p.salary, 0).toLocaleString('pt-BR')}</p>
+                        <p class="text-3xl font-bold text-red-700">R$ ${totalSalary.toLocaleString('pt-BR')}</p>
                     </div>
                     <div class="bg-green-100 p-4 rounded-lg">
                         <h3 class="text-lg font-semibold text-green-800">Receita da Temporada</h3>
@@ -1459,7 +1707,7 @@
                         { header: 'Ação', key: 'action', class: 'text-center' }
                     ],
                     availablePlayers,
-                    (p) => `<button ${playerTeam.cash >= p.value ? '' : 'disabled'} onclick="buyPlayer('${p.id}')" class="px-3 py-1 bg-green-500 text-white text-xs font-bold rounded hover:bg-green-600 transition disabled:opacity-50 disabled:cursor-not-allowed">Comprar</button>`
+                    (p) => `<button ${playerTeam.cash >= p.value && !playerTeam.transferEmbargo ? '' : 'disabled'} onclick="buyPlayer('${p.id}')" class="px-3 py-1 bg-green-500 text-white text-xs font-bold rounded hover:bg-green-600 transition disabled:opacity-50 disabled:cursor-not-allowed">Comprar</button>`
                 );
             } else {
                 const viewKey = 'transfers-sell';
@@ -1487,7 +1735,8 @@
         function renderTable(viewKey, columns, data, actionRenderer = null, rowClassRenderer = null) {
             const headerHTML = columns.map(col => {
                 const sortable = col.sortable !== false;
-                return `<th class="p-3 font-semibold ${col.class || ''} ${sortable ? 'sortable' : ''}" ${sortable ? `onclick="handleSort('${viewKey}', '${col.key}')"` : ''}>
+                const tooltipAttr = col.tooltip ? `title="${col.tooltip}"` : '';
+                return `<th class="p-3 font-semibold ${col.class || ''} ${sortable ? 'sortable' : ''}" ${tooltipAttr} ${sortable ? `onclick="handleSort('${viewKey}', '${col.key}')"` : ''}>
                     ${col.header} ${sortable ? getSortIcon(viewKey, col.key) : ''}
                 </th>`;
             }).join('');
@@ -1584,6 +1833,43 @@
             mainContent.appendChild(container);
         }
         
+        function renderContractRenewals() {
+            const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            const expiringPlayers = team.players.filter(p => p.contractEndYear <= gameState.currentYear);
+
+            const container = document.createElement('div');
+            container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
+            
+            let contentHTML = '';
+            if (expiringPlayers.length === 0) {
+                contentHTML = `<p class="text-center text-gray-600 my-4">Nenhum jogador com contrato expirando.</p>`;
+            } else {
+                contentHTML = renderTable('renewals',
+                    [
+                        { header: 'Nome', key: 'name' },
+                        { header: 'Idade', key: 'age', class: 'text-center' },
+                        { header: 'Habil.', key: 'skill', class: 'text-center' },
+                        { header: 'Salário Atual', key: 'salary', class: 'text-right', format: 'currency' },
+                        { header: 'Ações', key: 'action', class: 'text-center' }
+                    ],
+                    expiringPlayers,
+                    (p) => `<div class="flex justify-center space-x-2">
+                                <button onclick="renewContract('${p.id}')" class="px-3 py-1 bg-green-500 text-white text-xs font-bold rounded hover:bg-green-600 transition">Renovar</button>
+                                <button onclick="releasePlayer('${p.id}')" class="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded hover:bg-red-600 transition">Dispensar</button>
+                            </div>`
+                );
+            }
+
+            container.innerHTML = `
+                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6">
+                    <h2 class="text-2xl font-bold">Renovações de Contrato (${gameState.currentYear})</h2>
+                </div>
+                ${contentHTML}
+                <button onclick="startNewSeason()" class="w-full mt-8 p-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition shadow">Iniciar Temporada ${gameState.currentYear + 1}</button>
+            `;
+            mainContent.appendChild(container);
+        }
+
         function renderMatchCommentary() {
             const { match } = gameState.matchSimulation;
             const homeTeam = gameState.teams.find(t => t.id === match.homeTeamId);
@@ -1596,17 +1882,60 @@
                     <h2 class="text-2xl font-bold">Dia de Jogo!</h2>
                     <p class="text-lg">${homeTeam.name} vs ${awayTeam.name}</p>
                 </div>
+                
+                <div id="match-controls" class="mb-4">
+                     <button id="start-match-btn" onclick="runMatchSimulation()" class="w-full p-3 bg-green-500 text-white rounded-lg font-bold hover:bg-green-600 transition shadow">Iniciar Partida</button>
+                </div>
+
                 <div id="commentary-box" class="h-64 bg-gray-800 text-white font-mono text-sm p-4 rounded-lg overflow-y-auto">
                     <!-- Commentary will appear here -->
                 </div>
-                <button id="start-match-btn" onclick="runMatchSimulation()" class="w-full mt-4 p-3 bg-green-500 text-white rounded-lg font-bold hover:bg-green-600 transition shadow">Iniciar Partida</button>
             `;
             mainContent.appendChild(container);
         }
 
+        // ##### NEW VIEWS FOR OBJECTIVES #####
+        function renderBoardMeeting() {
+            const playerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            const container = document.createElement('div');
+            container.className = "bg-white shadow-md rounded-lg p-6 text-center";
+            container.innerHTML = `
+                <h2 class="text-2xl font-bold mb-2">Reunião com a Diretoria</h2>
+                <p class="mb-6 text-gray-600">A diretoria se reuniu e definiu as seguintes metas para a temporada ${gameState.currentYear}. Contamos com você!</p>
+                <div class="bg-gray-100 p-6 rounded-lg text-left inline-block">
+                    <ul class="list-disc list-inside space-y-3">
+                        ${playerTeam.boardObjectives.map(obj => `<li class="text-lg">${obj.text}</li>`).join('')}
+                    </ul>
+                </div>
+                <button onclick="changeView('dashboard')" class="w-full mt-8 p-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition shadow">Aceitar Desafio e Ir para o Painel</button>
+            `;
+            mainContent.appendChild(container);
+        }
+
+        function renderGameOver() {
+            const { objectivesResult } = gameState.endOfSeasonReport;
+            const failedReason = objectivesResult.find(r => !r.met)?.text || "Não cumpriu as metas estabelecidas.";
+
+            const container = document.createElement('div');
+            container.className = "bg-white shadow-md rounded-lg p-6 text-center";
+            container.innerHTML = `
+                <h2 class="text-4xl font-bold mb-4 text-red-600">FIM DE JOGO</h2>
+                <p class="text-xl mb-2">Você foi demitido!</p>
+                <p class="mb-6 text-gray-700">A diretoria não ficou satisfeita com seu desempenho.</p>
+                <div class="bg-red-100 p-4 rounded-lg text-red-800 font-semibold mb-8">
+                    <p>Motivo: ${failedReason}</p>
+                </div>
+                <button onclick="startNewGame()" class="px-8 py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">Iniciar uma Nova Carreira</button>
+            `;
+            mainContent.appendChild(container);
+        }
+
+
         function runMatchSimulation() {
-            const startBtn = document.getElementById('start-match-btn');
-            if (startBtn) startBtn.style.display = 'none';
+            const matchControlsDiv = document.getElementById('match-controls');
+            if (matchControlsDiv) {
+                matchControlsDiv.innerHTML = `<button class="w-full p-3 bg-gray-500 text-white rounded-lg font-bold transition shadow cursor-not-allowed" disabled>Simulando...</button>`;
+            }
 
             const commentaryBox = document.getElementById('commentary-box');
             const match = gameState.matchSimulation.match;
@@ -1626,20 +1955,18 @@
                     i++;
                 } else {
                     clearInterval(gameState.matchSimulation.interval);
-                    const continueBtn = document.createElement('button');
-                    continueBtn.textContent = 'Ver Resultados da Rodada';
-                    continueBtn.className = 'w-full mt-4 p-3 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 transition shadow';
-                    continueBtn.onclick = () => {
-                        const isLastRound = gameState.currentRound === gameState.fixtures.length;
-                        if (isLastRound) {
-                            handleEndOfSeason();
-                            changeView('end-of-season');
-                        } else {
+                    
+                    if (matchControlsDiv) {
+                        const continueBtn = document.createElement('button');
+                        continueBtn.textContent = 'Ver Resultados da Rodada';
+                        continueBtn.className = 'w-full p-3 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 transition shadow';
+                        continueBtn.onclick = () => {
                             gameState.currentRound++;
                             changeView('round-results');
-                        }
-                    };
-                    mainContent.appendChild(continueBtn);
+                        };
+                        matchControlsDiv.innerHTML = ''; // Clear "Simulando..."
+                        matchControlsDiv.appendChild(continueBtn);
+                    }
                 }
             }, 100);
         }
