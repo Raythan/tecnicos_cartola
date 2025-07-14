@@ -73,7 +73,7 @@
     const MIN_SQUAD_SIZE = 18;
     const MIN_GOALKEEPERS = 2;
     const POSITIONS = { GOALKEEPER: 'Goleiro', DEFENDER: 'Defensor', MIDFIELDER: 'Meio-campo', ATTACKER: 'Atacante' };
-    const getInitialState = () => ({ teams: [], leagueTable: [], playerStats: [], currentYear: 2025, playerTeamId: 0 });
+    const getInitialState = () => ({ teams: [], leagueTable: [], playerStats: [], currentYear: 2025, playerTeamId: 0, managerHistory: [] });
     const createLeagueTable = () => { gameState.leagueTable = gameState.teams.map(t => ({ teamId: t.id, points: 0, wins: 0, losses: 0, draws: 0, goalsFor: 0, goalsAgainst: 0, goalDifference: 0 }))};
     const updateTableWithResult = (result) => {
         const homeStats = gameState.leagueTable.find(e => e.teamId === result.homeTeamId);
@@ -161,6 +161,33 @@
         sellerTeam.players = sellerTeam.players.filter(p => p.id !== playerId);
         playerToSell.teamId = buyerTeam.id;
         buyerTeam.players.push(playerToSell);
+    };
+    const generateBoardObjectives = (team) => {
+        const lastSeason = gameState.managerHistory.find(h => h.year === gameState.currentYear - 1);
+        const lastPosition = lastSeason ? lastSeason.position : 10;
+        let leagueTarget;
+        if (lastPosition <= 4) {
+            leagueTarget = { type: 'league_position', target: 1, text: 'Ser campeão da liga' };
+        } else if (lastPosition <= 10) {
+            leagueTarget = { type: 'league_position', target: 4, text: 'Terminar entre os 4 primeiros' };
+        } else if (lastPosition <= 16) {
+            leagueTarget = { type: 'league_position', target: 10, text: 'Terminar na metade de cima da tabela' };
+        } else {
+            leagueTarget = { type: 'league_position', target: 16, text: 'Evitar o rebaixamento' };
+        }
+        const financialTarget = { type: 'financial', target: 'positive_balance', text: 'Terminar a temporada com o caixa positivo' };
+        team.boardObjectives = [leagueTarget, financialTarget];
+    };
+    const checkObjectivesCompletion = (team, finalPosition) => {
+        let allMet = true;
+        const results = team.boardObjectives.map(obj => {
+            let met = false;
+            if (obj.type === 'league_position') { met = finalPosition <= obj.target; } 
+            else if (obj.type === 'financial') { met = team.cash > 0; }
+            if (!met) allMet = false;
+            return { text: obj.text, met };
+        });
+        return { allMet, results };
     };
     const showNotification = () => {}; // Mock para evitar erros
   </script>
@@ -289,9 +316,6 @@
             assert.ok(player.salary > originalSalary, "O salário deve ter aumentado");
         });
 
-        // ##### TEST FIX #####
-        // This test now creates a squad larger than the minimum size,
-        // so the release action is not blocked by the guard clause.
         QUnit.test('Dispensa de Jogador', function(assert) {
             // ARRANGE
             gameState = getInitialState();
@@ -388,6 +412,64 @@
             // ASSERT
             assert.equal(gameState.teams[0].cash, 1000000, "Dinheiro do comprador não deve mudar");
             assert.equal(gameState.teams[0].players.length, 0, "Comprador não deve receber o jogador devido ao embargo");
+        });
+    });
+
+    // ##### NEW TESTS FOR BOARD OBJECTIVES #####
+    QUnit.module('Objetivos da Diretoria', function() {
+        QUnit.test('generateBoardObjectives - Time de ponta recebe meta difícil', function(assert) {
+            // ARRANGE
+            gameState = getInitialState();
+            gameState.currentYear = 2026;
+            gameState.managerHistory = [{ year: 2025, position: 3 }]; // Terminou em 3º
+            const team = { id: 0, boardObjectives: [] };
+            
+            // ACT
+            generateBoardObjectives(team);
+            
+            // ASSERT
+            assert.equal(team.boardObjectives[0].target, 1, "Meta deve ser ser campeão (posição 1)");
+            assert.equal(team.boardObjectives[0].text, 'Ser campeão da liga', "Texto da meta deve ser 'Ser campeão da liga'");
+        });
+
+        QUnit.test('checkObjectivesCompletion - Todos os objetivos cumpridos', function(assert) {
+            // ARRANGE
+            const team = {
+                cash: 500000, // Caixa positivo
+                boardObjectives: [
+                    { type: 'league_position', target: 4, text: 'Terminar entre os 4 primeiros' },
+                    { type: 'financial', target: 'positive_balance', text: 'Terminar a temporada com o caixa positivo' }
+                ]
+            };
+            const finalPosition = 2; // Cumpriu a meta
+
+            // ACT
+            const result = checkObjectivesCompletion(team, finalPosition);
+
+            // ASSERT
+            assert.ok(result.allMet, "Todos os objetivos deveriam ter sido cumpridos");
+            assert.ok(result.results[0].met, "Objetivo da liga deve ser marcado como cumprido");
+            assert.ok(result.results[1].met, "Objetivo financeiro deve ser marcado como cumprido");
+        });
+
+        QUnit.test('checkObjectivesCompletion - Falha no objetivo da liga', function(assert) {
+            // ARRANGE
+            const team = {
+                cash: 500000,
+                boardObjectives: [
+                    { type: 'league_position', target: 4, text: 'Terminar entre os 4 primeiros' },
+                    { type: 'financial', target: 'positive_balance', text: 'Terminar a temporada com o caixa positivo' }
+                ]
+            };
+            const finalPosition = 5; // Não cumpriu a meta
+
+            // ACT
+            const result = checkObjectivesCompletion(team, finalPosition);
+
+            // ASSERT
+            assert.notOk(result.allMet, "O conjunto de objetivos deveria ter falhado");
+            assert.notOk(result.results[0].met, "Objetivo da liga deve ser marcado como não cumprido");
+            assert.ok(result.results[1].met, "Objetivo financeiro deve ser marcado como cumprido");
         });
     });
 
