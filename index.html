@@ -116,6 +116,20 @@
         .sortable:hover {
             background-color: rgba(0,0,0,0.1);
         }
+        /* NEW: Stamina Bar Styles */
+        .stamina-bar-container {
+            width: 40px;
+            height: 5px;
+            background-color: #555;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 2px;
+        }
+        .stamina-bar {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s ease-in-out;
+        }
 
     </style>
 </head>
@@ -235,6 +249,10 @@
                 
                 gameState.teams.forEach(t => {
                     if (t.boardObjectives === undefined) t.boardObjectives = [];
+                    // NEW: Initialize stamina for players in old saves
+                    t.players.forEach(p => {
+                        if (p.stamina === undefined) p.stamina = 100;
+                    });
                 });
                 return true;
             }
@@ -253,7 +271,7 @@
             const age = isYouth ? getRandomInt(16, 18) : getRandomInt(18, 34);
             const skill = isYouth ? getRandomInt(30, 55) : getRandomInt(40, 85);
             const contractYears = getRandomInt(1, 5);
-            const player = { id: crypto.randomUUID(), name, age, position, skill, strength: getRandomInt(40, 85), value: getRandomInt(100, 5000) * 1000, teamId, injuryTurns: 0, isSuspended: false, salary: Math.floor(skill * 1000 + getRandomInt(500, 2000)), matchRatings: [], morale: 50, salaryAdjustedThisSeason: false, contractEndYear: gameState.currentYear + contractYears };
+            const player = { id: crypto.randomUUID(), name, age, position, skill, strength: getRandomInt(40, 85), value: getRandomInt(100, 5000) * 1000, teamId, injuryTurns: 0, isSuspended: false, salary: Math.floor(skill * 1000 + getRandomInt(500, 2000)), matchRatings: [], morale: 50, salaryAdjustedThisSeason: false, contractEndYear: gameState.currentYear + contractYears, stamina: 100 }; // NEW: Stamina added
             if (!isYouth) {
                 gameState.playerStats.push({ playerId: player.id, name: player.name, teamName: TEAM_NAMES[teamId], goals: 0 });
             }
@@ -341,9 +359,12 @@
             gameState.fixtures = [...fixtures, ...secondHalfFixtures];
         }
 
+        // NEW: Player skill is now affected by stamina
         function getPlayerEffectiveSkill(player) {
             const moraleBonus = (player.morale - 50) / 10; // From -5 to +5
-            return player.skill + moraleBonus;
+            // Stamina penalty: No penalty at 100. Max penalty of -15 skill at 0 stamina.
+            const staminaPenalty = (100 - player.stamina) * 0.15;
+            return player.skill + moraleBonus - staminaPenalty;
         }
 
         function getTeamStrength(teamId) {
@@ -452,7 +473,13 @@
             const playersInMatch = [...homeTeam.players.filter(p => homeTeam.startingXI.includes(p.id)), ...awayTeam.players.filter(p => awayTeam.startingXI.includes(p.id))];
             playersInMatch.forEach(player => {
                 if (player.injuryTurns > 0 || player.isSuspended) return;
-                if (Math.random() < 0.015) {
+                
+                // NEW: Increased injury chance for tired players
+                const baseInjuryChance = 0.015;
+                const staminaFatigueFactor = (100 - player.stamina) / 100; // 0 for full stamina, 1 for 0 stamina
+                const injuryChance = baseInjuryChance + (staminaFatigueFactor * 0.05); // Max chance becomes 6.5%
+
+                if (Math.random() < injuryChance) {
                     player.injuryTurns = getRandomInt(1, 4);
                     events.injuries.push({ name: player.name, teamId: player.teamId, turns: player.injuryTurns });
                 }
@@ -509,25 +536,23 @@
             }
         }
 
-        function processMonthlyFinances() {
-            let message = "Despesas mensais com salários foram pagas.";
-            let playerTeamLostMoney = false;
+        // NEW: Function to update player stamina after a round
+        function updatePlayerStamina() {
             gameState.teams.forEach(team => {
-                const totalSalary = team.players.reduce((sum, p) => sum + p.salary, 0);
-                team.cash -= totalSalary;
-                if (team.id === gameState.playerTeamId && team.cash < 0) {
-                    playerTeamLostMoney = true;
-                }
+                team.players.forEach(player => {
+                    if (team.startingXI.includes(player.id)) {
+                        // Players who played lose stamina
+                        player.stamina = Math.max(0, player.stamina - getRandomInt(15, 25));
+                    } else {
+                        // Players who didn't play recover stamina
+                        player.stamina = Math.min(100, player.stamina + getRandomInt(10, 20));
+                    }
+                });
             });
-            if (playerTeamLostMoney) {
-                message += " Atenção: seu caixa está negativo!";
-                showNotification(message, "error");
-            } else {
-                showNotification(message, "info");
-            }
         }
 
         function processPostRoundUpdates() {
+            updatePlayerStamina(); // Update stamina first
             gameState.teams.forEach(team => {
                 team.players.forEach(player => {
                     if (player.isSuspended) player.isSuspended = false;
@@ -634,7 +659,6 @@
             return punishments;
         }
 
-        // ##### NEW FUNCTIONS FOR OBJECTIVES #####
         function generateBoardObjectives(team) {
             const lastSeason = gameState.managerHistory.find(h => h.year === gameState.currentYear - 1);
             const lastPosition = lastSeason ? lastSeason.position : 10; // Default to mid-table for first season
@@ -715,6 +739,7 @@
                     player.matchRatings = [];
                     player.morale = 50 + getRandomInt(-10, 10);
                     player.salaryAdjustedThisSeason = false;
+                    player.stamina = 100; // Reset stamina for new season
                     if (player.age >= 36 && Math.random() < 0.25) {
                         retiredPlayers.push(player.id);
                         if (team.id === gameState.playerTeamId) report.retired.push({ name: player.name, age: player.age });
@@ -1244,7 +1269,7 @@
                 <div class="mt-8 p-4 bg-gray-50 rounded-lg border">
                     <h3 class="font-bold text-lg mb-2 text-center">Próxima Partida</h3>
                     <div class="py-4">${nextMatchHTML}</div>
-                    <button onclick="${isEndOfSeason ? `handleEndOfSeason(); changeView('end-of-season')` : 'simulateRound()'}" class="w-full mt-4 p-3 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 transition shadow ${isEndOfSeason ? 'opacity-50 cursor-not-allowed' : ''}">${buttonText}</button>
+                    <button onclick="${isEndOfSeason ? `handleEndOfSeason()` : 'simulateRound()'}" class="w-full mt-4 p-3 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 transition shadow ${isEndOfSeason ? '' : ''}">${buttonText}</button>
                 </div>`;
             mainContent.appendChild(container);
         }
@@ -1268,10 +1293,15 @@
                 if (player.morale > 70) moraleIcon = `<div class="morale-icon" title="Feliz">😊</div>`;
                 else if (player.morale < 30) moraleIcon = `<div class="morale-icon" title="Infieliz">😠</div>`;
 
+                // NEW: Stamina bar visualization
+                const staminaColor = player.stamina > 60 ? 'bg-green-500' : player.stamina > 30 ? 'bg-yellow-500' : 'bg-red-500';
+                const staminaBar = `<div class="stamina-bar-container" title="Stamina: ${player.stamina}%"><div class="stamina-bar ${staminaColor}" style="width: ${player.stamina}%;"></div></div>`;
+
                 return `<div class="player-marker p-1 ${isUnavailable ? 'opacity-70' : ''}" draggable="${!isUnavailable}" ondragstart="handleDragStart(event, '${player.id}')" ondragend="handleDragEnd(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, '${player.id}')">
                                 ${moraleIcon}
                                 <div class="w-10 h-10 rounded-full ${posColors[player.position]} flex items-center justify-center font-bold text-lg mb-1">${player.skill}</div>
                                 <span class="player-name">${player.name.split(' ')[0]}</span>
+                                ${staminaBar}
                                 ${statusIcon}
                             </div>`;
             };
@@ -1386,7 +1416,7 @@
 
             const isEndOfSeason = gameState.currentRound > gameState.fixtures.length;
             const nextRoundButtonText = isEndOfSeason ? "Ver Resumo da Temporada" : "Simular Próxima Rodada";
-            const nextRoundButtonAction = isEndOfSeason ? `handleEndOfSeason();` : `simulateRound()`;
+            const nextRoundButtonAction = isEndOfSeason ? `handleEndOfSeason()` : `simulateRound()`;
 
             const playerMatch = gameState.lastRoundResults.find(r => r.homeTeamId === playerTeamId || r.awayTeamId === playerTeamId);
             const otherMatches = gameState.lastRoundResults.filter(r => r !== playerMatch);
@@ -1526,6 +1556,7 @@
                         { header: 'Nome', key: 'name' },
                         { header: 'Idade', key: 'age' },
                         { header: 'Habil.', key: 'skill', class: 'text-center' },
+                        { header: 'Stamina', key: 'stamina', class: 'text-center' }, // NEW
                         { header: 'Salário Mensal', key: 'salary', class: 'text-right', format: 'currency' }
                     ],
                     team.players
@@ -1792,6 +1823,7 @@
                     [
                         { header: 'Nome', key: 'name' },
                         { header: 'Moral', key: 'morale', format: 'morale', class: 'text-center' },
+                        { header: 'Stamina', key: 'stamina', class: 'text-center' }, // NEW
                         { header: 'Ação', key: 'action', class: 'text-center' }
                     ],
                     sortedPlayers,
@@ -1894,7 +1926,6 @@
             mainContent.appendChild(container);
         }
 
-        // ##### NEW VIEWS FOR OBJECTIVES #####
         function renderBoardMeeting() {
             const playerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
             const container = document.createElement('div');
