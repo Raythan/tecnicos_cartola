@@ -116,7 +116,7 @@
         .sortable:hover {
             background-color: rgba(0,0,0,0.1);
         }
-        /* NEW: Stamina Bar Styles */
+        /* Stamina Bar Styles */
         .stamina-bar-container {
             width: 40px;
             height: 5px;
@@ -184,7 +184,8 @@
             { id: 3, name: 'Risco e Glória', description: 'Baixa renda fixa, mas com bônus generosos por vitória.', fixedValue: 1000000, winBonus: 120000 },
         ];
         const SAVE_KEY = 'tecnicosCartolaSave';
-        const FINANCIAL_FAIR_PLAY_SALARY_CAP = 0.70; // 70% of income
+        const FINANCIAL_FAIR_PLAY_SALARY_CAP = 0.70;
+        const STAMINA_WARNING_THRESHOLD = 40; // NEW: Threshold for stamina warnings
 
         // --- GAME STATE ---
         let gameState = {};
@@ -249,7 +250,6 @@
                 
                 gameState.teams.forEach(t => {
                     if (t.boardObjectives === undefined) t.boardObjectives = [];
-                    // NEW: Initialize stamina for players in old saves
                     t.players.forEach(p => {
                         if (p.stamina === undefined) p.stamina = 100;
                     });
@@ -271,7 +271,7 @@
             const age = isYouth ? getRandomInt(16, 18) : getRandomInt(18, 34);
             const skill = isYouth ? getRandomInt(30, 55) : getRandomInt(40, 85);
             const contractYears = getRandomInt(1, 5);
-            const player = { id: crypto.randomUUID(), name, age, position, skill, strength: getRandomInt(40, 85), value: getRandomInt(100, 5000) * 1000, teamId, injuryTurns: 0, isSuspended: false, salary: Math.floor(skill * 1000 + getRandomInt(500, 2000)), matchRatings: [], morale: 50, salaryAdjustedThisSeason: false, contractEndYear: gameState.currentYear + contractYears, stamina: 100 }; // NEW: Stamina added
+            const player = { id: crypto.randomUUID(), name, age, position, skill, strength: getRandomInt(40, 85), value: getRandomInt(100, 5000) * 1000, teamId, injuryTurns: 0, isSuspended: false, salary: Math.floor(skill * 1000 + getRandomInt(500, 2000)), matchRatings: [], morale: 50, salaryAdjustedThisSeason: false, contractEndYear: gameState.currentYear + contractYears, stamina: 100 };
             if (!isYouth) {
                 gameState.playerStats.push({ playerId: player.id, name: player.name, teamName: TEAM_NAMES[teamId], goals: 0 });
             }
@@ -359,10 +359,8 @@
             gameState.fixtures = [...fixtures, ...secondHalfFixtures];
         }
 
-        // NEW: Player skill is now affected by stamina
         function getPlayerEffectiveSkill(player) {
-            const moraleBonus = (player.morale - 50) / 10; // From -5 to +5
-            // Stamina penalty: No penalty at 100. Max penalty of -15 skill at 0 stamina.
+            const moraleBonus = (player.morale - 50) / 10;
             const staminaPenalty = (100 - player.stamina) * 0.15;
             return player.skill + moraleBonus - staminaPenalty;
         }
@@ -474,10 +472,9 @@
             playersInMatch.forEach(player => {
                 if (player.injuryTurns > 0 || player.isSuspended) return;
                 
-                // NEW: Increased injury chance for tired players
                 const baseInjuryChance = 0.015;
-                const staminaFatigueFactor = (100 - player.stamina) / 100; // 0 for full stamina, 1 for 0 stamina
-                const injuryChance = baseInjuryChance + (staminaFatigueFactor * 0.05); // Max chance becomes 6.5%
+                const staminaFatigueFactor = (100 - player.stamina) / 100;
+                const injuryChance = baseInjuryChance + (staminaFatigueFactor * 0.05);
 
                 if (Math.random() < injuryChance) {
                     player.injuryTurns = getRandomInt(1, 4);
@@ -536,15 +533,12 @@
             }
         }
 
-        // NEW: Function to update player stamina after a round
         function updatePlayerStamina() {
             gameState.teams.forEach(team => {
                 team.players.forEach(player => {
                     if (team.startingXI.includes(player.id)) {
-                        // Players who played lose stamina
                         player.stamina = Math.max(0, player.stamina - getRandomInt(15, 25));
                     } else {
-                        // Players who didn't play recover stamina
                         player.stamina = Math.min(100, player.stamina + getRandomInt(10, 20));
                     }
                 });
@@ -552,7 +546,7 @@
         }
 
         function processPostRoundUpdates() {
-            updatePlayerStamina(); // Update stamina first
+            updatePlayerStamina();
             gameState.teams.forEach(team => {
                 team.players.forEach(player => {
                     if (player.isSuspended) player.isSuspended = false;
@@ -724,9 +718,9 @@
             report.ffpPunishments = checkFinancialFairPlay();
             const objectivesCheck = checkObjectivesCompletion(playerTeam, playerFinalPosition);
             report.objectivesResult = objectivesCheck.results;
+            gameState.endOfSeasonReport = report; // Save report before potential game over
 
             if (!objectivesCheck.allMet) {
-                gameState.endOfSeasonReport = report;
                 changeView('game-over');
                 return;
             }
@@ -773,7 +767,7 @@
                 }
                 team.seasonIncome = {prizes: 0, tickets: 0, sponsor: 0};
             });
-            gameState.endOfSeasonReport = report;
+            changeView('end-of-season');
         }
 
         function startNewSeason() {
@@ -1207,6 +1201,11 @@
             mainContent.appendChild(container);
         }
 
+        // NEW: Helper function to get tired players
+        function getTiredPlayers(team) {
+            return team.players.filter(p => team.startingXI.includes(p.id) && p.stamina < STAMINA_WARNING_THRESHOLD);
+        }
+
         function renderDashboard() {
             const playerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
             const isEndOfSeason = gameState.currentRound > gameState.fixtures.length;
@@ -1244,6 +1243,17 @@
                     </ul>
                 </div>`;
             }
+            
+            // NEW: Stamina Warning
+            let staminaWarningHTML = '';
+            const tiredPlayers = getTiredPlayers(playerTeam);
+            if (tiredPlayers.length > 0) {
+                staminaWarningHTML = `
+                <div class="mt-6 p-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700">
+                    <p class="font-bold">Atenção: Jogadores Cansados!</p>
+                    <p>Os seguintes jogadores titulares estão com a estamina baixa e correm risco de lesão: ${tiredPlayers.map(p => p.name).join(', ')}. Considere poupá-los.</p>
+                </div>`;
+            }
 
             const container = document.createElement('div');
             container.className = "bg-white shadow-md rounded-lg p-6";
@@ -1255,7 +1265,8 @@
                         <span class="font-semibold">Rodada: ${isEndOfSeason ? gameState.fixtures.length : gameState.currentRound}/${gameState.fixtures.length}</span>
                     </div>
                 </div>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-white">
+                ${staminaWarningHTML}
+                <div class="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-white">
                     <button onclick="changeView('tactics')" class="p-4 bg-blue-500 rounded-lg font-semibold hover:bg-blue-600 transition shadow">Elenco/Táticas</button>
                     <button onclick="changeView('league')" class="p-4 bg-green-500 rounded-lg font-semibold hover:bg-green-600 transition shadow">Campeonato</button>
                     <button onclick="changeView('transfers')" class="p-4 bg-yellow-500 rounded-lg font-semibold hover:bg-yellow-600 transition shadow ${transferButtonDisabled ? 'opacity-50 cursor-not-allowed' : ''}" ${transferButtonDisabled ? 'disabled' : ''} title="${transferButtonTitle}">Mercado</button>
@@ -1293,7 +1304,6 @@
                 if (player.morale > 70) moraleIcon = `<div class="morale-icon" title="Feliz">😊</div>`;
                 else if (player.morale < 30) moraleIcon = `<div class="morale-icon" title="Infieliz">😠</div>`;
 
-                // NEW: Stamina bar visualization
                 const staminaColor = player.stamina > 60 ? 'bg-green-500' : player.stamina > 30 ? 'bg-yellow-500' : 'bg-red-500';
                 const staminaBar = `<div class="stamina-bar-container" title="Stamina: ${player.stamina}%"><div class="stamina-bar ${staminaColor}" style="width: ${player.stamina}%;"></div></div>`;
 
@@ -1413,6 +1423,17 @@
             if (suspensions.length > 0) {
                 eventsHTML += `<h3 class="text-lg font-bold mt-4 text-yellow-600">Jogadores Suspensos</h3><ul class="list-disc list-inside">${suspensions.map(e => `<li>${e.name}</li>`).join('')}</ul>`;
             }
+            
+            // NEW: Stamina warning after the match
+            const playerTeam = gameState.teams.find(t => t.id === playerTeamId);
+            const tiredPlayers = getTiredPlayers(playerTeam);
+            if(tiredPlayers.length > 0) {
+                 eventsHTML += `<div class="mt-4 p-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700">
+                    <p class="font-bold">Atenção: Elenco Cansado!</p>
+                    <p>Jogadores com estamina baixa: ${tiredPlayers.map(p => p.name).join(', ')}. Lembre-se de ir em "Elenco/Táticas" para poupá-los.</p>
+                </div>`;
+            }
+
 
             const isEndOfSeason = gameState.currentRound > gameState.fixtures.length;
             const nextRoundButtonText = isEndOfSeason ? "Ver Resumo da Temporada" : "Simular Próxima Rodada";
@@ -1556,7 +1577,7 @@
                         { header: 'Nome', key: 'name' },
                         { header: 'Idade', key: 'age' },
                         { header: 'Habil.', key: 'skill', class: 'text-center' },
-                        { header: 'Stamina', key: 'stamina', class: 'text-center' }, // NEW
+                        { header: 'Stamina', key: 'stamina', class: 'text-center' },
                         { header: 'Salário Mensal', key: 'salary', class: 'text-right', format: 'currency' }
                     ],
                     team.players
@@ -1823,7 +1844,7 @@
                     [
                         { header: 'Nome', key: 'name' },
                         { header: 'Moral', key: 'morale', format: 'morale', class: 'text-center' },
-                        { header: 'Stamina', key: 'stamina', class: 'text-center' }, // NEW
+                        { header: 'Stamina', key: 'stamina', class: 'text-center' },
                         { header: 'Ação', key: 'action', class: 'text-center' }
                     ],
                     sortedPlayers,
