@@ -185,7 +185,9 @@
         ];
         const SAVE_KEY = 'tecnicosCartolaSave';
         const FINANCIAL_FAIR_PLAY_SALARY_CAP = 0.70;
-        const STAMINA_WARNING_THRESHOLD = 40; // NEW: Threshold for stamina warnings
+        const STAMINA_WARNING_THRESHOLD = 40;
+        const KEY_PLAYER_SKILL_THRESHOLD = 75; // NEW: Skill threshold for a player to be considered a key player
+        const UNHAPPINESS_GAMES_THRESHOLD = 3; // NEW: Games on the bench to trigger unhappiness
 
         // --- GAME STATE ---
         let gameState = {};
@@ -252,6 +254,7 @@
                     if (t.boardObjectives === undefined) t.boardObjectives = [];
                     t.players.forEach(p => {
                         if (p.stamina === undefined) p.stamina = 100;
+                        if (p.gamesWithoutPlaying === undefined) p.gamesWithoutPlaying = 0; // NEW
                     });
                 });
                 return true;
@@ -271,7 +274,7 @@
             const age = isYouth ? getRandomInt(16, 18) : getRandomInt(18, 34);
             const skill = isYouth ? getRandomInt(30, 55) : getRandomInt(40, 85);
             const contractYears = getRandomInt(1, 5);
-            const player = { id: crypto.randomUUID(), name, age, position, skill, strength: getRandomInt(40, 85), value: getRandomInt(100, 5000) * 1000, teamId, injuryTurns: 0, isSuspended: false, salary: Math.floor(skill * 1000 + getRandomInt(500, 2000)), matchRatings: [], morale: 50, salaryAdjustedThisSeason: false, contractEndYear: gameState.currentYear + contractYears, stamina: 100 };
+            const player = { id: crypto.randomUUID(), name, age, position, skill, strength: getRandomInt(40, 85), value: getRandomInt(100, 5000) * 1000, teamId, injuryTurns: 0, isSuspended: false, salary: Math.floor(skill * 1000 + getRandomInt(500, 2000)), matchRatings: [], morale: 50, salaryAdjustedThisSeason: false, contractEndYear: gameState.currentYear + contractYears, stamina: 100, gamesWithoutPlaying: 0 }; // NEW: gamesWithoutPlaying added
             if (!isYouth) {
                 gameState.playerStats.push({ playerId: player.id, name: player.name, teamName: TEAM_NAMES[teamId], goals: 0 });
             }
@@ -513,7 +516,6 @@
                 if (homeTeam.sponsorId) {
                     const sponsor = SPONSORS.find(s => s.id === homeTeam.sponsorId);
                     homeTeam.cash += sponsor.winBonus;
-                    homeTeam.seasonIncome.sponsor += sponsor.winBonus;
                 }
             } else if (result.awayGoals > result.homeGoals) {
                 awayStats.wins++; awayStats.points += 3; homeStats.losses++;
@@ -545,8 +547,31 @@
             });
         }
 
+        // NEW: Function to handle morale changes based on playing time
+        function updatePlayingTimeHappiness() {
+            gameState.teams.forEach(team => {
+                team.players.forEach(player => {
+                    if (player.skill < KEY_PLAYER_SKILL_THRESHOLD) return; // Only affects key players
+
+                    if (!team.startingXI.includes(player.id)) {
+                        player.gamesWithoutPlaying++;
+                        if (player.gamesWithoutPlaying >= UNHAPPINESS_GAMES_THRESHOLD) {
+                            player.morale = Math.max(0, player.morale - 15);
+                            if (team.id === gameState.playerTeamId) {
+                                showNotification(`${player.name} está infeliz com a falta de oportunidades e sua moral caiu.`, 'error');
+                            }
+                            player.gamesWithoutPlaying = 0; // Reset to avoid constant notifications
+                        }
+                    } else {
+                        player.gamesWithoutPlaying = 0; // Reset if player started
+                    }
+                });
+            });
+        }
+
         function processPostRoundUpdates() {
             updatePlayerStamina();
+            updatePlayingTimeHappiness(); // NEW
             gameState.teams.forEach(team => {
                 team.players.forEach(player => {
                     if (player.isSuspended) player.isSuspended = false;
@@ -1201,7 +1226,6 @@
             mainContent.appendChild(container);
         }
 
-        // NEW: Helper function to get tired players
         function getTiredPlayers(team) {
             return team.players.filter(p => team.startingXI.includes(p.id) && p.stamina < STAMINA_WARNING_THRESHOLD);
         }
@@ -1244,7 +1268,6 @@
                 </div>`;
             }
             
-            // NEW: Stamina Warning
             let staminaWarningHTML = '';
             const tiredPlayers = getTiredPlayers(playerTeam);
             if (tiredPlayers.length > 0) {
@@ -1424,7 +1447,6 @@
                 eventsHTML += `<h3 class="text-lg font-bold mt-4 text-yellow-600">Jogadores Suspensos</h3><ul class="list-disc list-inside">${suspensions.map(e => `<li>${e.name}</li>`).join('')}</ul>`;
             }
             
-            // NEW: Stamina warning after the match
             const playerTeam = gameState.teams.find(t => t.id === playerTeamId);
             const tiredPlayers = getTiredPlayers(playerTeam);
             if(tiredPlayers.length > 0) {
@@ -1803,9 +1825,17 @@
                         cellValue = `R$ ${cellValue.toLocaleString('pt-BR')}`;
                     }
                     if (col.format === 'morale') {
-                        if (cellValue > 70) return `<td class="p-3 ${col.class || ''}"><span class="text-green-600 font-semibold">Feliz 😊</span></td>`;
-                        if (cellValue < 30) return `<td class="p-3 ${col.class || ''}"><span class="text-red-600 font-semibold">Infieliz 😠</span></td>`;
-                        return `<td class="p-3 ${col.class || ''}"><span class="text-gray-600">Neutro 😐</span></td>`;
+                        let statusText = '';
+                        if (row.gamesWithoutPlaying >= 2 && row.skill >= KEY_PLAYER_SKILL_THRESHOLD) {
+                             statusText = `<span class="text-yellow-600 font-bold" title="Insatisfeito com o tempo em campo">⚠️</span>`;
+                        } else if (cellValue > 70) {
+                            statusText = `<span class="text-green-600 font-semibold" title="Feliz">😊</span>`;
+                        } else if (cellValue < 30) {
+                            statusText = `<span class="text-red-600 font-semibold" title="Infieliz">😠</span>`;
+                        } else {
+                            statusText = `<span class="text-gray-600" title="Neutro">😐</span>`;
+                        }
+                        return `<td class="p-3 ${col.class || ''}">${statusText} ${cellValue}</td>`;
                     }
                     return `<td class="p-3 ${col.class || ''}">${cellValue}</td>`;
                 }).join('');

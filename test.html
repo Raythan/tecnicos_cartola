@@ -73,9 +73,15 @@
     const MIN_SQUAD_SIZE = 18;
     const MIN_GOALKEEPERS = 2;
     const POSITIONS = { GOALKEEPER: 'Goleiro', DEFENDER: 'Defensor', MIDFIELDER: 'Meio-campo', ATTACKER: 'Atacante' };
+    const SPONSORS = [{ id: 1, name: 'Teste', winBonus: 50000 }];
+    const PRIZE_MONEY = { WIN: 100000 };
+    const KEY_PLAYER_SKILL_THRESHOLD = 75;
+    const UNHAPPINESS_GAMES_THRESHOLD = 3;
     const getInitialState = () => ({ teams: [], leagueTable: [], playerStats: [], currentYear: 2025, playerTeamId: 0, managerHistory: [] });
     const createLeagueTable = () => { gameState.leagueTable = gameState.teams.map(t => ({ teamId: t.id, points: 0, wins: 0, losses: 0, draws: 0, goalsFor: 0, goalsAgainst: 0, goalDifference: 0 }))};
     const updateTableWithResult = (result) => {
+        const homeTeam = gameState.teams.find(t => t.id === result.homeTeamId);
+        const awayTeam = gameState.teams.find(t => t.id === result.awayTeamId);
         const homeStats = gameState.leagueTable.find(e => e.teamId === result.homeTeamId);
         const awayStats = gameState.leagueTable.find(e => e.teamId === result.awayTeamId);
         homeStats.played++; awayStats.played++;
@@ -88,6 +94,11 @@
             homeStats.points += 3;
             homeStats.wins += 1;
             awayStats.losses += 1;
+            homeTeam.cash += PRIZE_MONEY.WIN;
+            if (homeTeam.sponsorId) {
+                const sponsor = SPONSORS.find(s => s.id === homeTeam.sponsorId);
+                homeTeam.cash += sponsor.winBonus;
+            }
         } else if (result.awayGoals > result.homeGoals) {
             awayStats.points += 3;
             awayStats.wins += 1;
@@ -188,6 +199,38 @@
             return { text: obj.text, met };
         });
         return { allMet, results };
+    };
+    const updatePlayerStamina = () => {
+        gameState.teams.forEach(team => {
+            team.players.forEach(player => {
+                if (team.startingXI.includes(player.id)) {
+                    player.stamina = Math.max(0, player.stamina - 20); // Consistent loss for testing
+                } else {
+                    player.stamina = Math.min(100, player.stamina + 15); // Consistent gain for testing
+                }
+            });
+        });
+    };
+    const getPlayerEffectiveSkill = (player) => {
+        const moraleBonus = (player.morale - 50) / 10;
+        const staminaPenalty = (100 - player.stamina) * 0.15;
+        return player.skill + moraleBonus - staminaPenalty;
+    };
+     const updatePlayingTimeHappiness = () => {
+        gameState.teams.forEach(team => {
+            team.players.forEach(player => {
+                if (player.skill < KEY_PLAYER_SKILL_THRESHOLD) return; 
+                if (!team.startingXI.includes(player.id)) {
+                    player.gamesWithoutPlaying++;
+                    if (player.gamesWithoutPlaying >= UNHAPPINESS_GAMES_THRESHOLD) {
+                        player.morale = Math.max(0, player.morale - 15);
+                        player.gamesWithoutPlaying = 0;
+                    }
+                } else {
+                    player.gamesWithoutPlaying = 0;
+                }
+            });
+        });
     };
     const showNotification = () => {}; // Mock para evitar erros
   </script>
@@ -297,6 +340,22 @@
             assert.ok(gameState.teams[0].transferEmbargo, "O time deve sofrer embargo de transferência");
             assert.equal(gameState.teams[0].pointDeductionNextSeason, 5, "O time deve ter 5 pontos de dedução");
         });
+
+        QUnit.test('Bônus de Patrocinador por vitória', function(assert) {
+            // ARRANGE
+            gameState = getInitialState();
+            gameState.teams = [ { id: 0, name: 'Time Casa', cash: 0, sponsorId: 1 }, { id: 1, name: 'Time Fora' } ];
+            createLeagueTable();
+            const resultado = { homeTeamId: 0, awayTeamId: 1, homeGoals: 1, awayGoals: 0 };
+            const prizeMoney = PRIZE_MONEY.WIN;
+            const sponsorBonus = SPONSORS.find(s => s.id === 1).winBonus;
+
+            // ACT
+            updateTableWithResult(resultado);
+            
+            // ASSERT
+            assert.equal(gameState.teams[0].cash, prizeMoney + sponsorBonus, "Caixa deve incluir prêmio da vitória e bônus do patrocinador");
+        });
     });
 
     QUnit.module('Gestão de Contratos e Elenco', function() {
@@ -382,6 +441,25 @@
             assert.equal(gameState.teams[1].players.length, 0, "Vendedor não deve ter mais o jogador");
         });
 
+        QUnit.test('Venda de Jogador bem-sucedida', function(assert) {
+            // ARRANGE
+            gameState = getInitialState();
+            const playerValue = 750000;
+            gameState.teams = [
+                { id: 0, name: 'Vendedor', cash: 0, players: [{ id: 'p1', value: playerValue }] },
+                { id: 1, name: 'Comprador', cash: 1000000, players: [] }
+            ];
+
+            // ACT
+            sellPlayer('p1');
+
+            // ASSERT
+            assert.equal(gameState.teams[0].cash, playerValue, "Dinheiro do vendedor deve ser creditado");
+            assert.equal(gameState.teams[1].cash, 1000000 - playerValue, "Dinheiro do comprador deve ser debitado");
+            assert.equal(gameState.teams[0].players.length, 0, "Vendedor não deve ter mais o jogador");
+            assert.equal(gameState.teams[1].players.length, 1, "Comprador deve ter 1 jogador");
+        });
+
         QUnit.test('Restrição de Compra (Sem Dinheiro)', function(assert) {
             // ARRANGE
             gameState = getInitialState();
@@ -415,7 +493,6 @@
         });
     });
 
-    // ##### NEW TESTS FOR BOARD OBJECTIVES #####
     QUnit.module('Objetivos da Diretoria', function() {
         QUnit.test('generateBoardObjectives - Time de ponta recebe meta difícil', function(assert) {
             // ARRANGE
@@ -470,6 +547,103 @@
             assert.notOk(result.allMet, "O conjunto de objetivos deveria ter falhado");
             assert.notOk(result.results[0].met, "Objetivo da liga deve ser marcado como não cumprido");
             assert.ok(result.results[1].met, "Objetivo financeiro deve ser marcado como cumprido");
+        });
+    });
+
+    QUnit.module('Cansaço (Stamina)', function() {
+        QUnit.test('Perda de Stamina após jogar', function(assert) {
+            // ARRANGE
+            gameState = getInitialState();
+            const player = { id: 'p1', stamina: 100 };
+            gameState.teams = [{ id: 0, players: [player], startingXI: ['p1'] }];
+
+            // ACT
+            updatePlayerStamina();
+
+            // ASSERT
+            assert.ok(player.stamina < 100, "Stamina do jogador titular deve diminuir");
+        });
+
+        QUnit.test('Recuperação de Stamina sem jogar', function(assert) {
+            // ARRANGE
+            gameState = getInitialState();
+            const player = { id: 'p1', stamina: 50 };
+            gameState.teams = [{ id: 0, players: [player], startingXI: [] }]; // Não está nos titulares
+
+            // ACT
+            updatePlayerStamina();
+
+            // ASSERT
+            assert.ok(player.stamina > 50, "Stamina do jogador não relacionado deve aumentar");
+        });
+
+        QUnit.test('Impacto da Stamina no Desempenho', function(assert) {
+            // ARRANGE
+            const player = { skill: 80, morale: 50, stamina: 100 };
+            
+            // ACT
+            const skillFullStamina = getPlayerEffectiveSkill(player);
+            player.stamina = 20; // Stamina baixa
+            const skillLowStamina = getPlayerEffectiveSkill(player);
+
+            // ASSERT
+            assert.ok(skillLowStamina < skillFullStamina, "Habilidade efetiva deve ser menor com stamina baixa");
+        });
+    });
+
+    QUnit.module('Moral e Satisfação do Jogador', function() {
+        QUnit.test('Jogador chave fica feliz ao jogar', function(assert) {
+            // ARRANGE
+            gameState = getInitialState();
+            const player = { id: 'p1', skill: 80, gamesWithoutPlaying: 2, morale: 50 };
+            gameState.teams = [{ id: 0, players: [player], startingXI: ['p1'] }];
+
+            // ACT
+            updatePlayingTimeHappiness();
+
+            // ASSERT
+            assert.equal(player.gamesWithoutPlaying, 0, "Contador de jogos sem jogar deve ser zerado");
+            assert.equal(player.morale, 50, "Moral não deve mudar se o jogador joga");
+        });
+
+        QUnit.test('Jogador chave no banco incrementa contador', function(assert) {
+            // ARRANGE
+            gameState = getInitialState();
+            const player = { id: 'p1', skill: 80, gamesWithoutPlaying: 1, morale: 50 };
+            gameState.teams = [{ id: 0, players: [player], startingXI: [] }];
+
+            // ACT
+            updatePlayingTimeHappiness();
+
+            // ASSERT
+            assert.equal(player.gamesWithoutPlaying, 2, "Contador de jogos sem jogar deve ser incrementado");
+            assert.equal(player.morale, 50, "Moral não deve mudar antes do limite");
+        });
+
+        QUnit.test('Jogador chave no banco fica infeliz após 3 jogos', function(assert) {
+            // ARRANGE
+            gameState = getInitialState();
+            const player = { id: 'p1', skill: 80, gamesWithoutPlaying: 2, morale: 50 };
+            gameState.teams = [{ id: 0, players: [player], startingXI: [] }];
+
+            // ACT
+            updatePlayingTimeHappiness();
+
+            // ASSERT
+            assert.equal(player.morale, 35, "Moral deve cair após atingir o limite de jogos no banco");
+        });
+
+        QUnit.test('Jogador normal não é afetado pela falta de jogos', function(assert) {
+            // ARRANGE
+            gameState = getInitialState();
+            const player = { id: 'p1', skill: 70, gamesWithoutPlaying: 5, morale: 50 };
+            gameState.teams = [{ id: 0, players: [player], startingXI: [] }];
+
+            // ACT
+            updatePlayingTimeHappiness();
+
+            // ASSERT
+            assert.equal(player.morale, 50, "Moral de jogador normal não deve ser afetada");
         });
     });
 
