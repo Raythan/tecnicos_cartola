@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        /* Custom styles */
+        /* Estilos personalizados */
         body {
             font-family: 'Inter', sans-serif;
             background-color: #f3f4f6;
@@ -28,7 +28,7 @@
         .table-responsive::-webkit-scrollbar-thumb { background: #888; border-radius: 10px; }
         .table-responsive::-webkit-scrollbar-thumb:hover { background: #555; }
         
-        /* Notification styles */
+        /* Estilos de notificação */
         #notification-banner {
             transition: opacity 0.5s, transform 0.5s;
         }
@@ -40,7 +40,7 @@
             animation: shrink 3s linear forwards;
         }
 
-        /* Pitch styles */
+        /* Estilos do campo */
         .pitch {
             background-color: #2a8e43;
             background-image:
@@ -105,10 +105,10 @@
             border: 1px solid white;
         }
         .morale-icon {
-             position: absolute;
-             top: -5px;
-             left: -5px;
-             font-size: 16px;
+            position: absolute;
+            top: -5px;
+            left: -5px;
+            font-size: 16px;
         }
         .sortable {
             cursor: pointer;
@@ -116,7 +116,7 @@
         .sortable:hover {
             background-color: rgba(0,0,0,0.1);
         }
-        /* Stamina Bar Styles */
+        /* Estilos da barra de estamina */
         .stamina-bar-container {
             width: 40px;
             height: 5px;
@@ -130,35 +130,94 @@
             border-radius: 3px;
             transition: width 0.3s ease-in-out;
         }
-
+         /* Placeholder de slot vazio */
+        .empty-slot {
+            width: 60px;
+            height: 60px;
+            border: 2px dashed rgba(255, 255, 255, 0.4);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .empty-slot.drag-over {
+            background-color: rgba(255, 255, 255, 0.2);
+            border-style: solid;
+        }
+        /* Tooltip de personalidade */
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 140px;
+            background-color: #555;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px;
+            position: absolute;
+            z-index: 10;
+            top: 50%;
+            left: 115%;
+            transform: translateY(-50%);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .tooltip .tooltiptext::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            right: 100%;
+            margin-top: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: transparent #555 transparent transparent;
+        }
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
     </style>
 </head>
 <body class="text-gray-800">
 
-    <!-- Notification Banner -->
+    <!-- Banner de Notificação -->
     <div id="notification-banner" class="fixed top-5 right-5 shadow-lg rounded-lg p-4 opacity-0 transform translate-y-10 z-50 overflow-hidden cursor-pointer">
         <span id="notification-message"></span>
         <div id="notification-progress" class="absolute bottom-0 left-0 h-1 bg-white/50"></div>
     </div>
 
-    <!-- Main Container -->
+    <!-- Container Principal -->
     <div class="container mx-auto p-4 max-w-7xl">
 
-        <!-- Header -->
+        <!-- Cabeçalho -->
         <header class="bg-white shadow-md rounded-lg p-4 mb-6 flex flex-wrap justify-between items-center">
             <h1 class="text-2xl md:text-3xl font-bold text-blue-600 cursor-pointer" onclick="changeView('dashboard')">Técnicos Cartola</h1>
             <div id="team-info" class="text-right mt-2 md:mt-0"></div>
         </header>
 
-        <!-- Main Content Area -->
+        <!-- Área de Conteúdo Principal -->
         <main id="main-content"></main>
 
     </div>
 
-    <!-- JavaScript Game Logic -->
+    <!-- Lógica do Jogo em JavaScript -->
     <script>
-        // --- GAME CONFIGURATION AND DATA ---
+        // --- CONFIGURAÇÃO E DADOS DO JOGO ---
         const POSITIONS = { GOALKEEPER: 'Goleiro', DEFENDER: 'Defensor', MIDFIELDER: 'Meio-campo', ATTACKER: 'Atacante' };
+        const PERSONALITIES = [
+            { id: 'Líder', name: 'Líder', description: 'Inspira companheiros, aumentando a força do time. Menos propenso a ficar infeliz.' },
+            { id: 'Leal', name: 'Leal', description: 'Mais fácil de renovar o contrato e raramente causa problemas.' },
+            { id: 'Profissional', name: 'Profissional', description: 'Seu desempenho é menos afetado pela baixa moral.' },
+            { id: 'Ambicioso', name: 'Ambicioso', description: 'Quer jogar em times de ponta. Pode forçar uma transferência se o time estiver mal.' },
+            { id: 'Temperamental', name: 'Temperamental', description: 'Propenso a receber cartões e causar quedas de moral.' },
+            { id: 'Mercenário', name: 'Mercenário', description: 'Fortemente motivado por dinheiro; exige salários altos nas renovações.' }
+        ];
         const FORMATIONS = {
             '4-4-2': { DEFENDER: 4, MIDFIELDER: 4, ATTACKER: 2 },
             '4-3-3': { DEFENDER: 4, MIDFIELDER: 3, ATTACKER: 3 },
@@ -186,10 +245,38 @@
         const SAVE_KEY = 'tecnicosCartolaSave';
         const FINANCIAL_FAIR_PLAY_SALARY_CAP = 0.70;
         const STAMINA_WARNING_THRESHOLD = 40;
-        const KEY_PLAYER_SKILL_THRESHOLD = 75; // NEW: Skill threshold for a player to be considered a key player
-        const UNHAPPINESS_GAMES_THRESHOLD = 3; // NEW: Games on the bench to trigger unhappiness
+        const STAMINA_CRITICAL_THRESHOLD = 10;
+        const KEY_PLAYER_SKILL_THRESHOLD = 75;
+        const UNHAPPINESS_GAMES_THRESHOLD = 3;
+        const WIN_STREAK_THRESHOLD = 3;
+        const LOSS_STREAK_THRESHOLD = 3;
+        const MORALE_STREAK_BONUS = 10;
+        
+        // Constantes de classes da UI para redução de código
+        const UI_CLASSES = {
+            CARD: 'bg-white shadow-md rounded-lg p-4 sm:p-6',
+            BTN: 'px-4 py-2 rounded-lg font-semibold shadow transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed',
+            BTN_COLORS: {
+                BLUE: 'bg-blue-500 text-white hover:bg-blue-600',
+                GREEN: 'bg-green-500 text-white hover:bg-green-600',
+                RED: 'bg-red-500 text-white hover:bg-red-600',
+                YELLOW: 'bg-yellow-500 text-white hover:bg-yellow-600',
+                INDIGO: 'bg-indigo-500 text-white hover:bg-indigo-600',
+                PURPLE: 'bg-purple-500 text-white hover:bg-purple-600',
+                TEAL: 'bg-teal-500 text-white hover:bg-teal-600',
+                ORANGE: 'bg-orange-500 text-white hover:bg-orange-600',
+                PINK: 'bg-pink-500 text-white hover:bg-pink-600',
+                GRAY: 'bg-gray-500 text-white'
+            },
+            BTN_SIZES: {
+                DASHBOARD: 'p-4',
+                SMALL: 'px-3 py-1 text-xs font-bold',
+                LARGE: 'px-6 py-3',
+                FULL_P3: 'w-full p-3 font-bold'
+            }
+        };
 
-        // --- GAME STATE ---
+        // --- ESTADO DO JOGO ---
         let gameState = {};
 
         function getInitialState() {
@@ -227,7 +314,7 @@
             };
         }
 
-        // --- SAVE/LOAD LOGIC ---
+        // --- LÓGICA DE SALVAR/CARREGAR ---
         function saveGame() {
             try {
                 const stateToSave = { ...gameState };
@@ -243,18 +330,21 @@
             const savedGame = localStorage.getItem(SAVE_KEY);
             if (savedGame) {
                 gameState = JSON.parse(savedGame);
-                // Ensure new properties exist on loaded save
+                // Garante que novas propriedades existam no save carregado
                 if (!gameState.endOfSeasonReport) {
                     gameState.endOfSeasonReport = { objectivesResult: [] };
                 } else if (!gameState.endOfSeasonReport.objectivesResult) {
-                     gameState.endOfSeasonReport.objectivesResult = [];
+                    gameState.endOfSeasonReport.objectivesResult = [];
                 }
                 
                 gameState.teams.forEach(t => {
                     if (t.boardObjectives === undefined) t.boardObjectives = [];
+                    if (t.winStreak === undefined) t.winStreak = 0;
+                    if (t.lossStreak === undefined) t.lossStreak = 0;
                     t.players.forEach(p => {
                         if (p.stamina === undefined) p.stamina = 100;
-                        if (p.gamesWithoutPlaying === undefined) p.gamesWithoutPlaying = 0; // NEW
+                        if (p.gamesWithoutPlaying === undefined) p.gamesWithoutPlaying = 0;
+                        if (p.personality === undefined) p.personality = PERSONALITIES[getRandomInt(0, PERSONALITIES.length - 1)].id;
                     });
                 });
                 return true;
@@ -266,7 +356,7 @@
             localStorage.removeItem(SAVE_KEY);
         }
 
-        // --- CORE LOGIC ---
+        // --- LÓGICA CENTRAL ---
         const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
         function generatePlayer(teamId, position, isYouth = false) {
@@ -274,7 +364,9 @@
             const age = isYouth ? getRandomInt(16, 18) : getRandomInt(18, 34);
             const skill = isYouth ? getRandomInt(30, 55) : getRandomInt(40, 85);
             const contractYears = getRandomInt(1, 5);
-            const player = { id: crypto.randomUUID(), name, age, position, skill, strength: getRandomInt(40, 85), value: getRandomInt(100, 5000) * 1000, teamId, injuryTurns: 0, isSuspended: false, salary: Math.floor(skill * 1000 + getRandomInt(500, 2000)), matchRatings: [], morale: 50, salaryAdjustedThisSeason: false, contractEndYear: gameState.currentYear + contractYears, stamina: 100, gamesWithoutPlaying: 0 }; // NEW: gamesWithoutPlaying added
+            const personality = PERSONALITIES[getRandomInt(0, PERSONALITIES.length - 1)].id;
+
+            const player = { id: crypto.randomUUID(), name, age, position, personality, skill, strength: getRandomInt(40, 85), value: getRandomInt(100, 5000) * 1000, teamId, injuryTurns: 0, isSuspended: false, salary: Math.floor(skill * 1000 + getRandomInt(500, 2000)), matchRatings: [], morale: 50, salaryAdjustedThisSeason: false, contractEndYear: gameState.currentYear + contractYears, stamina: 100, gamesWithoutPlaying: 0 };
             if (!isYouth) {
                 gameState.playerStats.push({ playerId: player.id, name: player.name, teamName: TEAM_NAMES[teamId], goals: 0 });
             }
@@ -294,16 +386,17 @@
                 youthPlayers.push(generatePlayer(id, pos, true));
             }
 
-            const team = { id, name, players, cash: getRandomInt(5, 15) * 1000000, tactic: '4-4-2', startingXI: [], reserves: [], seasonIncome: {prizes: 0, tickets: 0, sponsor: 0}, youthAcademyLevel: 1, youthPlayers, stadiumLevel: 1, sponsorId: null, boardObjectives: [], transferEmbargo: false, pointDeductionNextSeason: 0 };
+            const team = { id, name, players, cash: getRandomInt(5, 15) * 1000000, tactic: '4-4-2', startingXI: [], reserves: [], seasonIncome: {prizes: 0, tickets: 0, sponsor: 0}, youthAcademyLevel: 1, youthPlayers, stadiumLevel: 1, sponsorId: null, boardObjectives: [], transferEmbargo: false, pointDeductionNextSeason: 0, winStreak: 0, lossStreak: 0 };
             setInitialLineup(team);
             return team;
         }
 
-        function setInitialLineup(team) {
+        function buildLineupForFormation(team) {
             const formation = FORMATIONS[team.tactic];
-            team.startingXI = [];
-            
-            const availablePlayers = team.players.filter(p => p.injuryTurns === 0 && !p.isSuspended);
+            if (!formation) return;
+
+            team.startingXI = []; // Começa do zero
+            const availablePlayers = team.players.filter(p => p.injuryTurns === 0 && !p.isSuspended && p.stamina > STAMINA_CRITICAL_THRESHOLD);
             const remainingForBench = [...availablePlayers];
 
             const pickPlayers = (pos, count) => {
@@ -328,10 +421,28 @@
             team.reserves = remainingForBench.map(p => p.id);
         }
 
+        function setInitialLineup(team) {
+            // Para o time do jogador, apenas filtramos jogadores inválidos, preservando a escalação escolhida
+            if (team.id === gameState.playerTeamId && team.startingXI && team.startingXI.length > 0) {
+                const validStarters = team.startingXI
+                    .map(pId => team.players.find(p => p.id === pId))
+                    .filter(p => p && p.injuryTurns === 0 && !p.isSuspended && p.stamina > STAMINA_CRITICAL_THRESHOLD);
+                
+                team.startingXI = validStarters.map(p => p.id);
+                
+                const allPlayerIds = team.players.map(p => p.id);
+                team.reserves = allPlayerIds.filter(pId => !team.startingXI.includes(pId));
+
+            // Para times da IA ou configuração inicial, preenchemos automaticamente a escalação com os melhores jogadores disponíveis
+            } else {
+                buildLineupForFormation(team);
+            }
+        }
+
         function createLeagueTable() {
             gameState.leagueTable = gameState.teams.map(team => {
                 const startingPoints = -team.pointDeductionNextSeason;
-                team.pointDeductionNextSeason = 0; // Reset for the new season
+                team.pointDeductionNextSeason = 0; // Reseta para a nova temporada
                 return { teamId: team.id, teamName: team.name, played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, goalDifference: 0, points: startingPoints };
             });
         }
@@ -363,8 +474,13 @@
         }
 
         function getPlayerEffectiveSkill(player) {
-            const moraleBonus = (player.morale - 50) / 10;
+            let moraleBonus = (player.morale - 50) / 10;
             const staminaPenalty = (100 - player.stamina) * 0.15;
+            
+            if (player.personality === 'Profissional' && moraleBonus < 0) {
+                moraleBonus *= 0.5; 
+            }
+
             return player.skill + moraleBonus - staminaPenalty;
         }
 
@@ -372,17 +488,25 @@
             const team = gameState.teams.find(t => t.id === teamId);
             if (!team) return { attack: 0, defense: 0 };
             const startingPlayers = team.players.filter(p => team.startingXI.includes(p.id));
+
+            let leaderBonus = 0;
+            if (startingPlayers.some(p => p.personality === 'Líder')) {
+                leaderBonus = 1; 
+            }
+            
             const getSectorStrength = (position) => {
                 const players = startingPlayers.filter(p => p.position === position);
                 if (players.length === 0) return 0;
                 return players.reduce((sum, p) => sum + getPlayerEffectiveSkill(p), 0) / players.length;
             };
+
             const gkStrength = getSectorStrength(POSITIONS.GOALKEEPER);
             const defStrength = getSectorStrength(POSITIONS.DEFENDER);
             const midStrength = getSectorStrength(POSITIONS.MIDFIELDER);
             const attStrength = getSectorStrength(POSITIONS.ATTACKER);
-            const attack = (attStrength * 0.5) + (midStrength * 0.5);
-            const defense = (defStrength * 0.6) + (midStrength * 0.3) + (gkStrength * 0.1);
+
+            const attack = (attStrength * 0.5) + (midStrength * 0.5) + leaderBonus;
+            const defense = (defStrength * 0.6) + (midStrength * 0.3) + (gkStrength * 0.1) + leaderBonus;
             return { attack: attack || 50, defense: defense || 50 };
         }
 
@@ -452,13 +576,21 @@
                     
                     if (homeChance) {
                         homeGoals++;
-                        const scorer = assignGoals(homeTeam, 1)[0];
-                        commentary.push({ minute, text: `GOL! ${scorer.name} marca para ${homeTeam.name}!`, type: 'goal' });
+                        const scorers = assignGoals(homeTeam, 1);
+                        if (scorers.length > 0) {
+                            commentary.push({ minute, text: `GOL! ${scorers[0].name} marca para ${homeTeam.name}!`, type: 'goal' });
+                        } else {
+                            commentary.push({ minute, text: `GOL CONTRA! ${awayTeam.name} marca contra!`, type: 'goal' });
+                        }
                     }
                     if (awayChance) {
                         awayGoals++;
-                        const scorer = assignGoals(awayTeam, 1)[0];
-                        commentary.push({ minute, text: `GOL! ${scorer.name} marca para ${awayTeam.name}!`, type: 'goal' });
+                        const scorers = assignGoals(awayTeam, 1);
+                        if (scorers.length > 0) {
+                            commentary.push({ minute, text: `GOL! ${scorers[0].name} marca para ${awayTeam.name}!`, type: 'goal' });
+                        } else {
+                            commentary.push({ minute, text: `GOL CONTRA! ${homeTeam.name} marca contra!`, type: 'goal' });
+                        }
                     }
                 }
                 commentary.push({ minute: 90, text: "Fim de jogo!" });
@@ -483,7 +615,12 @@
                     player.injuryTurns = getRandomInt(1, 4);
                     events.injuries.push({ name: player.name, teamId: player.teamId, turns: player.injuryTurns });
                 }
-                if (Math.random() < 0.02) {
+
+                let suspensionChance = 0.02;
+                if (player.personality === 'Temperamental') {
+                    suspensionChance = 0.08; 
+                }
+                if (Math.random() < suspensionChance) {
                     player.isSuspended = true;
                     events.suspensions.push({ name: player.name, teamId: player.teamId });
                 }
@@ -517,6 +654,10 @@
                     const sponsor = SPONSORS.find(s => s.id === homeTeam.sponsorId);
                     homeTeam.cash += sponsor.winBonus;
                 }
+                homeTeam.winStreak++;
+                homeTeam.lossStreak = 0;
+                awayTeam.lossStreak++;
+                awayTeam.winStreak = 0;
             } else if (result.awayGoals > result.homeGoals) {
                 awayStats.wins++; awayStats.points += 3; homeStats.losses++;
                 awayTeam.cash += PRIZE_MONEY.WIN;
@@ -525,13 +666,21 @@
                     const sponsor = SPONSORS.find(s => s.id === awayTeam.sponsorId);
                     awayTeam.cash += sponsor.winBonus;
                     awayTeam.seasonIncome.sponsor += sponsor.winBonus;
-                }
+                 }
+                awayTeam.winStreak++;
+                awayTeam.lossStreak = 0;
+                homeTeam.lossStreak++;
+                homeTeam.winStreak = 0;
             } else {
                 homeStats.draws++; awayStats.draws++; homeStats.points++; awayStats.points++;
                 homeTeam.cash += PRIZE_MONEY.DRAW;
                 awayTeam.cash += PRIZE_MONEY.DRAW;
                 homeTeam.seasonIncome.prizes += PRIZE_MONEY.DRAW;
                 awayTeam.seasonIncome.prizes += PRIZE_MONEY.DRAW;
+                homeTeam.winStreak = 0;
+                homeTeam.lossStreak = 0;
+                awayTeam.winStreak = 0;
+                awayTeam.lossStreak = 0;
             }
         }
 
@@ -547,11 +696,11 @@
             });
         }
 
-        // NEW: Function to handle morale changes based on playing time
         function updatePlayingTimeHappiness() {
             gameState.teams.forEach(team => {
                 team.players.forEach(player => {
-                    if (player.skill < KEY_PLAYER_SKILL_THRESHOLD) return; // Only affects key players
+                    if (player.personality === 'Líder' || player.personality === 'Leal') return;
+                    if (player.skill < KEY_PLAYER_SKILL_THRESHOLD) return;
 
                     if (!team.startingXI.includes(player.id)) {
                         player.gamesWithoutPlaying++;
@@ -560,23 +709,62 @@
                             if (team.id === gameState.playerTeamId) {
                                 showNotification(`${player.name} está infeliz com a falta de oportunidades e sua moral caiu.`, 'error');
                             }
-                            player.gamesWithoutPlaying = 0; // Reset to avoid constant notifications
+                            player.gamesWithoutPlaying = 0;
                         }
                     } else {
-                        player.gamesWithoutPlaying = 0; // Reset if player started
+                        player.gamesWithoutPlaying = 0;
                     }
                 });
             });
         }
 
+        function processPlayerPersonalityEvents() {
+            const playerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            const leagueTable = [...gameState.leagueTable].sort((a, b) => b.points - a.points);
+            const playerPosition = leagueTable.findIndex(t => t.teamId === playerTeam.id) + 1;
+
+            playerTeam.players.forEach(player => {
+                if (player.personality === 'Ambicioso' && playerPosition > 10 && gameState.currentRound > 10) {
+                    if (Math.random() < 0.15) { 
+                         player.morale = Math.max(0, player.morale - 20);
+                         showNotification(`Sendo ambicioso, ${player.name} está frustrado com a posição do time na tabela.`, 'error');
+                    }
+                }
+                if (player.personality === 'Temperamental') {
+                     if (Math.random() < 0.05) { 
+                         player.morale = Math.max(0, player.morale - 10);
+                         showNotification(`${player.name} teve um desentendimento no treino, afetando sua moral.`, 'info');
+                    }
+                }
+            });
+        }
+
+        function updateCollectiveMorale() {
+            gameState.teams.forEach(team => {
+                if (team.winStreak >= WIN_STREAK_THRESHOLD) {
+                    team.players.forEach(p => p.morale = Math.min(100, p.morale + MORALE_STREAK_BONUS));
+                    if(team.id === gameState.playerTeamId) showNotification(`O time está em alta! A moral do elenco aumentou.`, 'success');
+                    team.winStreak = 0;
+                }
+                if (team.lossStreak >= LOSS_STREAK_THRESHOLD) {
+                    team.players.forEach(p => p.morale = Math.max(0, p.morale - MORALE_STREAK_BONUS));
+                    if(team.id === gameState.playerTeamId) showNotification(`O clima no vestiário está pesado... A moral do elenco caiu.`, 'error');
+                    team.lossStreak = 0;
+                }
+            });
+        }
+
         function processPostRoundUpdates() {
             updatePlayerStamina();
-            updatePlayingTimeHappiness(); // NEW
+            updatePlayingTimeHappiness();
+            updateCollectiveMorale();
+            processPlayerPersonalityEvents(); 
             gameState.teams.forEach(team => {
                 team.players.forEach(player => {
                     if (player.isSuspended) player.isSuspended = false;
                     if (player.injuryTurns > 0) player.injuryTurns--;
                 });
+                // Chamamos setInitialLineup que removerá automaticamente jogadores lesionados para o time do jogador
                 setInitialLineup(team);
             });
             gameState.conversationsLeft = 5;
@@ -661,7 +849,7 @@
         function checkFinancialFairPlay() {
             const punishments = [];
             gameState.teams.forEach(team => {
-                const totalSalary = team.players.reduce((sum, p) => sum + p.salary, 0) * 12; // Annual salary
+                const totalSalary = team.players.reduce((sum, p) => sum + p.salary, 0) * 12; // Salário anual
                 const totalIncome = team.seasonIncome.prizes + team.seasonIncome.tickets + team.seasonIncome.sponsor;
                 
                 if (totalIncome > 0 && totalSalary > (totalIncome * FINANCIAL_FAIR_PLAY_SALARY_CAP)) {
@@ -680,7 +868,7 @@
 
         function generateBoardObjectives(team) {
             const lastSeason = gameState.managerHistory.find(h => h.year === gameState.currentYear - 1);
-            const lastPosition = lastSeason ? lastSeason.position : 10; // Default to mid-table for first season
+            const lastPosition = lastSeason ? lastSeason.position : 10; // Padrão para meio da tabela na primeira temporada
 
             let leagueTarget;
             if (lastPosition <= 4) {
@@ -743,7 +931,7 @@
             report.ffpPunishments = checkFinancialFairPlay();
             const objectivesCheck = checkObjectivesCompletion(playerTeam, playerFinalPosition);
             report.objectivesResult = objectivesCheck.results;
-            gameState.endOfSeasonReport = report; // Save report before potential game over
+            gameState.endOfSeasonReport = report; // Salva o relatório antes de um possível game over
 
             if (!objectivesCheck.allMet) {
                 changeView('game-over');
@@ -758,7 +946,7 @@
                     player.matchRatings = [];
                     player.morale = 50 + getRandomInt(-10, 10);
                     player.salaryAdjustedThisSeason = false;
-                    player.stamina = 100; // Reset stamina for new season
+                    player.stamina = 100; // Reseta a estamina para a nova temporada
                     if (player.age >= 36 && Math.random() < 0.25) {
                         retiredPlayers.push(player.id);
                         if (team.id === gameState.playerTeamId) report.retired.push({ name: player.name, age: player.age });
@@ -870,15 +1058,24 @@
             const player = team.players.find(p => p.id === playerId);
             if (!player) return;
 
-            const salaryIncrease = 1 + (getRandomInt(10, 25) / 100); // 10-25% raise
+            let salaryIncrease;
+            if (player.personality === 'Mercenário') {
+                salaryIncrease = 1 + (getRandomInt(30, 50) / 100); 
+                showNotification(`${player.name} exigiu um grande aumento!`, 'info');
+            } else if (player.personality === 'Leal') {
+                salaryIncrease = 1 + (getRandomInt(5, 15) / 100); 
+            } else {
+                salaryIncrease = 1 + (getRandomInt(10, 25) / 100); 
+            }
+
             const newContractLength = getRandomInt(1, 4);
 
             player.salary = Math.ceil(player.salary * salaryIncrease);
             player.contractEndYear = gameState.currentYear + newContractLength;
-            player.morale = Math.min(100, player.morale + 25); // Renewal bonus morale
+            player.morale = Math.min(100, player.morale + 25); 
 
             showNotification(`${player.name} renovou por mais ${newContractLength} ano(s)!`, 'success');
-            render(); // Re-render the contract renewals screen
+            render(); 
         }
 
         function releasePlayer(playerId) {
@@ -900,15 +1097,16 @@
             gameState.playerStats = gameState.playerStats.filter(ps => ps.playerId !== playerId);
             
             showNotification(`${player.name} foi dispensado do clube.`, 'info');
-            render(); // Re-render the contract renewals screen
+            render(); 
         }
 
-
+        // ATUALIZADO: Agora chama a nova função de construção para resetar a escalação
         function changeFormation(formation) {
             const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
             if (team && FORMATIONS[formation]) {
                 team.tactic = formation;
-                setInitialLineup(team);
+                // Isso reconstrói a escalação do jogador com base na nova tática, corrigindo o bug.
+                buildLineupForFormation(team);
                 render();
             }
         }
@@ -916,11 +1114,11 @@
         function swapPlayers(player1Id, player2Id) {
             const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
             if (!team || player1Id === player2Id) return;
-            const player1 = team.players.find(p => p.id === player1Id);
-            const player2 = team.players.find(p => p.id === player2Id);
-            if (player1.position !== player2.position) { showNotification("Troca inválida. Os jogadores devem ser da mesma posição.", "error"); return; }
+            
             const p1_isStarter = team.startingXI.includes(player1Id);
             const p2_isStarter = team.startingXI.includes(player2Id);
+
+            // Caso 1: Titular <-> Reserva
             if (p1_isStarter && !p2_isStarter) {
                 const p1_index = team.startingXI.indexOf(player1Id);
                 const p2_index = team.reserves.indexOf(player2Id);
@@ -932,6 +1130,29 @@
                 team.reserves[p1_index] = player2Id;
                 team.startingXI[p2_index] = player1Id;
             }
+            // Caso 2: Titular <-> Titular (apenas troca suas posições no array, sem mudança visual mas é uma boa prática)
+            else if (p1_isStarter && p2_isStarter) {
+                const p1_index = team.startingXI.indexOf(player1Id);
+                const p2_index = team.startingXI.indexOf(player2Id);
+                [team.startingXI[p1_index], team.startingXI[p2_index]] = [team.startingXI[p2_index], team.startingXI[p1_index]];
+            }
+            render();
+        }
+
+        function assignPlayerToSlot(playerId) {
+            const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            if (!team) return;
+
+            const player = team.players.find(p => p.id === playerId);
+            // Permite mover um jogador apenas dos reservas
+            if (!player || !team.reserves.includes(playerId)) {
+                return;
+            }
+
+            // Move o jogador dos reservas para os titulares
+            team.reserves = team.reserves.filter(pId => pId !== playerId);
+            team.startingXI.push(playerId);
+
             render();
         }
         
@@ -1129,21 +1350,37 @@
             render();
         }
 
-        // --- DRAG AND DROP HANDLERS ---
+        // --- HANDLERS DE DRAG AND DROP ---
         function handleDragStart(e, playerId) { gameState.dragAndDrop.draggedPlayerId = playerId; e.target.classList.add('dragging'); }
         function handleDragEnd(e) { e.target.classList.remove('dragging'); }
-        function handleDragOver(e) { e.preventDefault(); const target = e.target.closest('.player-marker'); if (target) target.classList.add('drag-over'); }
-        function handleDragLeave(e) { const target = e.target.closest('.player-marker'); if (target) target.classList.remove('drag-over'); }
-        function handleDrop(e, targetPlayerId) {
-            e.preventDefault();
-            const target = e.target.closest('.player-marker');
+        function handleDragOver(e) { e.preventDefault(); const target = e.target.closest('.player-marker, .empty-slot'); if (target) target.classList.add('drag-over'); }
+        function handleDragLeave(e) { const target = e.target.closest('.player-marker, .empty-slot'); if (target) target.classList.remove('drag-over'); }
+        
+        function handleDropOnPlayer(event, targetPlayerId) {
+            event.preventDefault();
+            const target = event.target.closest('.player-marker');
             if (target) target.classList.remove('drag-over');
+            
             const draggedPlayerId = gameState.dragAndDrop.draggedPlayerId;
-            if (draggedPlayerId && targetPlayerId) swapPlayers(draggedPlayerId, targetPlayerId);
+            if (!draggedPlayerId || draggedPlayerId === targetPlayerId) return;
+
+            swapPlayers(draggedPlayerId, targetPlayerId);
             gameState.dragAndDrop.draggedPlayerId = null;
         }
 
-        // --- UI RENDERING ---
+        function handleDropOnEmptySlot(event) {
+            event.preventDefault();
+            const target = event.target.closest('.empty-slot');
+            if (target) target.classList.remove('drag-over');
+            
+            const draggedPlayerId = gameState.dragAndDrop.draggedPlayerId;
+            if (!draggedPlayerId) return;
+
+            assignPlayerToSlot(draggedPlayerId);
+            gameState.dragAndDrop.draggedPlayerId = null;
+        }
+
+        // --- RENDERIZAÇÃO DA UI ---
         const mainContent = document.getElementById('main-content');
         const notificationBanner = document.getElementById('notification-banner');
         const notificationMessage = document.getElementById('notification-message');
@@ -1206,13 +1443,13 @@
         
         function renderWelcomeScreen() {
             const container = document.createElement('div');
-            container.className = "bg-white shadow-md rounded-lg p-6 text-center";
+            container.className = UI_CLASSES.CARD + " text-center";
             container.innerHTML = `
                 <h2 class="text-2xl font-bold mb-4">Bem-vindo de volta, Técnico!</h2>
                 <p class="mb-6">Encontramos um jogo salvo. O que você deseja fazer?</p>
                 <div class="flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-4">
-                    <button onclick="continueGame()" class="px-6 py-3 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 transition shadow">Continuar Jogo</button>
-                    <button onclick="startNewGame()" class="px-6 py-3 bg-red-500 text-white rounded-lg font-semibold hover:bg-red-600 transition shadow">Novo Jogo</button>
+                    <button onclick="continueGame()" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.GREEN} ${UI_CLASSES.BTN_SIZES.LARGE}">Continuar Jogo</button>
+                    <button onclick="startNewGame()" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.RED} ${UI_CLASSES.BTN_SIZES.LARGE}">Novo Jogo</button>
                 </div>
             `;
             mainContent.appendChild(container);
@@ -1221,7 +1458,7 @@
         function renderTeamSelection() {
             document.getElementById('team-info').innerHTML = '';
             const container = document.createElement('div');
-            container.className = "bg-white shadow-md rounded-lg p-6";
+            container.className = UI_CLASSES.CARD;
             container.innerHTML = `<h2 class="text-2xl font-bold mb-4 text-center">Escolha seu Time para Gerenciar</h2><div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">${gameState.teams.map(team => `<button onclick="selectTeam(${team.id})" class="p-4 border rounded-lg text-center hover:bg-blue-600 hover:text-white hover:shadow-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500"><span class="font-semibold">${team.name}</span></button>`).join('')}</div>`;
             mainContent.appendChild(container);
         }
@@ -1230,10 +1467,34 @@
             return team.players.filter(p => team.startingXI.includes(p.id) && p.stamina < STAMINA_WARNING_THRESHOLD);
         }
 
+        /**
+         * Verifica se a escalação do jogador é válida para uma partida.
+         * @returns {{valid: boolean, message: string}} Um objeto com o status da validação e uma mensagem.
+         */
+        function getPlayerLineupValidation() {
+            const playerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
+            if (!playerTeam) return { valid: false, message: 'Time do jogador não encontrado.' };
+
+            if (playerTeam.startingXI.length !== 11) {
+                return { valid: false, message: `Sua escalação tem apenas ${playerTeam.startingXI.length} de 11 jogadores. Vá para "Elenco/Táticas" para completar o time.` };
+            }
+
+            const invalidPlayers = playerTeam.startingXI
+                .map(pId => playerTeam.players.find(p => p.id === pId))
+                .filter(p => !p || p.injuryTurns > 0 || p.isSuspended);
+
+            if (invalidPlayers.length > 0) {
+                const names = invalidPlayers.map(p => p.name).join(', ');
+                return { valid: false, message: `Você não pode iniciar a partida com jogadores suspensos ou lesionados na escalação: ${names}.` };
+            }
+
+            return { valid: true, message: 'Escalação válida.' };
+        }
+
         function renderDashboard() {
             const playerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
             const isEndOfSeason = gameState.currentRound > gameState.fixtures.length;
-            const buttonText = gameState.currentRound === gameState.fixtures.length ? "Simular Última Rodada" : "Simular Próxima Rodada";
+            const buttonText = isEndOfSeason ? "Ver Resumo da Temporada" : (gameState.currentRound === gameState.fixtures.length ? "Simular Última Rodada" : "Simular Próxima Rodada");
             let nextMatchHTML = '<p class="text-center text-xl font-bold text-green-600">Fim de temporada!</p>';
             if (!isEndOfSeason) {
                 const currentRoundFixtures = gameState.fixtures[gameState.currentRound - 1] || [];
@@ -1278,8 +1539,22 @@
                 </div>`;
             }
 
+            // Lógica de validação e botão de simulação refatorada
+            const lineupValidation = getPlayerLineupValidation();
+            const simulateButtonDisabled = isEndOfSeason || !lineupValidation.valid;
+            const simulateAction = isEndOfSeason ? 'handleEndOfSeason()' : 'simulateRound()';
+
+            let lineupWarningHTML = '';
+            if (!lineupValidation.valid) {
+                lineupWarningHTML = `
+                <div class="mt-6 p-4 bg-red-100 border-l-4 border-red-500 text-red-700">
+                    <p class="font-bold">Alerta: Escalação Inválida!</p>
+                    <p>${lineupValidation.message}</p>
+                </div>`;
+            }
+
             const container = document.createElement('div');
-            container.className = "bg-white shadow-md rounded-lg p-6";
+            container.className = UI_CLASSES.CARD;
             container.innerHTML = `
                 <div class="flex flex-wrap gap-4 justify-between items-center mb-6">
                     <h2 class="text-2xl font-bold">Painel Principal</h2>
@@ -1288,22 +1563,26 @@
                         <span class="font-semibold">Rodada: ${isEndOfSeason ? gameState.fixtures.length : gameState.currentRound}/${gameState.fixtures.length}</span>
                     </div>
                 </div>
+                ${lineupWarningHTML}
                 ${staminaWarningHTML}
                 <div class="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-white">
-                    <button onclick="changeView('tactics')" class="p-4 bg-blue-500 rounded-lg font-semibold hover:bg-blue-600 transition shadow">Elenco/Táticas</button>
-                    <button onclick="changeView('league')" class="p-4 bg-green-500 rounded-lg font-semibold hover:bg-green-600 transition shadow">Campeonato</button>
-                    <button onclick="changeView('transfers')" class="p-4 bg-yellow-500 rounded-lg font-semibold hover:bg-yellow-600 transition shadow ${transferButtonDisabled ? 'opacity-50 cursor-not-allowed' : ''}" ${transferButtonDisabled ? 'disabled' : ''} title="${transferButtonTitle}">Mercado</button>
-                    <button onclick="changeView('finances')" class="p-4 bg-indigo-500 rounded-lg font-semibold hover:bg-indigo-600 transition shadow">Finanças</button>
-                    <button onclick="changeView('statistics')" class="p-4 bg-purple-500 rounded-lg font-semibold hover:bg-purple-600 transition shadow">Estatísticas</button>
-                    <button onclick="changeView('academy')" class="p-4 bg-teal-500 rounded-lg font-semibold hover:bg-teal-600 transition shadow">Academia</button>
-                    <button onclick="changeView('stadium')" class="p-4 bg-orange-500 rounded-lg font-semibold hover:bg-orange-600 transition shadow">Estádio</button>
-                    <button onclick="changeView('morale')" class="p-4 bg-pink-500 rounded-lg font-semibold hover:bg-pink-600 transition shadow">Moral do Time</button>
+                    <button onclick="changeView('tactics')"   class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.BLUE} ${UI_CLASSES.BTN_SIZES.DASHBOARD}">Elenco/Táticas</button>
+                    <button onclick="changeView('league')"    class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.GREEN} ${UI_CLASSES.BTN_SIZES.DASHBOARD}">Campeonato</button>
+                    <button onclick="changeView('transfers')" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.YELLOW} ${UI_CLASSES.BTN_SIZES.DASHBOARD}" ${transferButtonDisabled ? 'disabled' : ''} title="${transferButtonTitle}">Mercado</button>
+                    <button onclick="changeView('finances')"  class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.INDIGO} ${UI_CLASSES.BTN_SIZES.DASHBOARD}">Finanças</button>
+                    <button onclick="changeView('statistics')"class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.PURPLE} ${UI_CLASSES.BTN_SIZES.DASHBOARD}">Estatísticas</button>
+                    <button onclick="changeView('academy')"   class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.TEAL} ${UI_CLASSES.BTN_SIZES.DASHBOARD}">Academia</button>
+                    <button onclick="changeView('stadium')"   class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.ORANGE} ${UI_CLASSES.BTN_SIZES.DASHBOARD}">Estádio</button>
+                    <button onclick="changeView('morale')"    class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.PINK} ${UI_CLASSES.BTN_SIZES.DASHBOARD}">Moral do Time</button>
                 </div>
                 ${objectivesHTML}
                 <div class="mt-8 p-4 bg-gray-50 rounded-lg border">
                     <h3 class="font-bold text-lg mb-2 text-center">Próxima Partida</h3>
                     <div class="py-4">${nextMatchHTML}</div>
-                    <button onclick="${isEndOfSeason ? `handleEndOfSeason()` : 'simulateRound()'}" class="w-full mt-4 p-3 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 transition shadow ${isEndOfSeason ? '' : ''}">${buttonText}</button>
+                    <button onclick="${simulateButtonDisabled ? '' : simulateAction}" 
+                        class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.RED} ${UI_CLASSES.BTN_SIZES.FULL_P3}" 
+                        ${simulateButtonDisabled ? 'disabled' : ''} 
+                        title="${lineupValidation.message}">${buttonText}</button>
                 </div>`;
             mainContent.appendChild(container);
         }
@@ -1311,6 +1590,7 @@
         function renderTactics() {
             const team = gameState.teams.find(t => t.id === gameState.playerTeamId);
             const getPlayerById = (id) => team.players.find(p => p.id === id);
+            const formation = FORMATIONS[team.tactic];
 
             const renderPlayerMarker = (player, isUnavailable = false) => {
                 if (!player) return '';
@@ -1321,6 +1601,8 @@
                     statusIcon = `<div class="status-icon bg-red-600" title="Lesionado por ${player.injuryTurns} rodada(s)">+</div>`;
                 } else if (player.isSuspended) {
                     statusIcon = `<div class="status-icon bg-yellow-400" title="Suspenso">!</div>`;
+                } else if (player.stamina <= STAMINA_CRITICAL_THRESHOLD) {
+                    statusIcon = `<div class="status-icon bg-gray-700" title="Exausto">ZzZ</div>`;
                 }
                 
                 let moraleIcon = '';
@@ -1329,35 +1611,85 @@
 
                 const staminaColor = player.stamina > 60 ? 'bg-green-500' : player.stamina > 30 ? 'bg-yellow-500' : 'bg-red-500';
                 const staminaBar = `<div class="stamina-bar-container" title="Stamina: ${player.stamina}%"><div class="stamina-bar ${staminaColor}" style="width: ${player.stamina}%;"></div></div>`;
+                
+                const personalityInfo = PERSONALITIES.find(p => p.id === player.personality);
+                const personalityTooltip = personalityInfo ? `<span class="tooltiptext">${personalityInfo.name}: ${personalityInfo.description}</span>` : '';
 
-                return `<div class="player-marker p-1 ${isUnavailable ? 'opacity-70' : ''}" draggable="${!isUnavailable}" ondragstart="handleDragStart(event, '${player.id}')" ondragend="handleDragEnd(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, '${player.id}')">
+                return `<div class="player-marker p-1 ${isUnavailable ? 'opacity-70' : ''}" draggable="${!isUnavailable}" ondragstart="handleDragStart(event, '${player.id}')" ondragend="handleDragEnd(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDropOnPlayer(event, '${player.id}')">
                                 ${moraleIcon}
-                                <div class="w-10 h-10 rounded-full ${posColors[player.position]} flex items-center justify-center font-bold text-lg mb-1">${player.skill}</div>
+                                <div class="tooltip w-10 h-10 rounded-full ${posColors[player.position]} flex items-center justify-center font-bold text-lg mb-1">
+                                    ${player.skill}
+                                    ${personalityTooltip}
+                                </div>
                                 <span class="player-name">${player.name.split(' ')[0]}</span>
                                 ${staminaBar}
                                 ${statusIcon}
                             </div>`;
             };
 
-            const startingXIPlayers = team.startingXI.map(getPlayerById);
-            const reservePlayers = team.reserves.map(getPlayerById).sort((a, b) => b.skill - a.skill);
-            const unavailablePlayers = team.players.filter(p => p.injuryTurns > 0 || p.isSuspended);
+            const renderEmptySlot = () => {
+                return `<div class="empty-slot" 
+                             ondragover="handleDragOver(event)" 
+                             ondragleave="handleDragLeave(event)" 
+                             ondrop="handleDropOnEmptySlot(event)">
+                             +
+                        </div>`;
+            };
+
+            const startingXIPlayerObjects = team.startingXI.map(getPlayerById).filter(p => p);
+            const availablePlayers = [...startingXIPlayerObjects];
+
+            const layout = {
+                [POSITIONS.GOALKEEPER]: [],
+                [POSITIONS.DEFENDER]: [],
+                [POSITIONS.MIDFIELDER]: [],
+                [POSITIONS.ATTACKER]: [],
+            };
+
+            const formationSlots = [
+                ...Array(1).fill(POSITIONS.GOALKEEPER),
+                ...Array(formation.DEFENDER).fill(POSITIONS.DEFENDER),
+                ...Array(formation.MIDFIELDER).fill(POSITIONS.MIDFIELDER),
+                ...Array(formation.ATTACKER).fill(POSITIONS.ATTACKER),
+            ];
+            
+            formationSlots.forEach(position => {
+                const playerIndex = availablePlayers.findIndex(p => p.position === position);
+                if (playerIndex !== -1) {
+                    const [player] = availablePlayers.splice(playerIndex, 1);
+                    layout[position].push(renderPlayerMarker(player));
+                } else {
+                    layout[position].push(null); 
+                }
+            });
+
+            Object.keys(layout).forEach(position => {
+                for (let i = 0; i < layout[position].length; i++) {
+                    if (layout[position][i] === null) { 
+                        if (availablePlayers.length > 0) {
+                            const [player] = availablePlayers.splice(0, 1);
+                            layout[position][i] = renderPlayerMarker(player);
+                        } else {
+                            layout[position][i] = renderEmptySlot();
+                        }
+                    }
+                }
+            });
+
+            const reservePlayers = team.reserves.map(getPlayerById).filter(p => p).sort((a, b) => b.skill - a.skill);
+            const unavailablePlayers = team.players.filter(p => (p.injuryTurns > 0 || p.isSuspended || p.stamina <= STAMINA_CRITICAL_THRESHOLD) && !team.reserves.includes(p.id));
 
             let fieldHtml = '<div class="center-circle"></div>';
-            const sectors = {
-                [POSITIONS.GOALKEEPER]: startingXIPlayers.filter(p => p && p.position === POSITIONS.GOALKEEPER),
-                [POSITIONS.DEFENDER]: startingXIPlayers.filter(p => p && p.position === POSITIONS.DEFENDER),
-                [POSITIONS.MIDFIELDER]: startingXIPlayers.filter(p => p && p.position === POSITIONS.MIDFIELDER),
-                [POSITIONS.ATTACKER]: startingXIPlayers.filter(p => p && p.position === POSITIONS.ATTACKER),
-            };
-            const sectorLayout = (players, top, height) => `<div class="absolute flex justify-around items-center w-full" style="top: ${top}; height: ${height};">${players.map(p => renderPlayerMarker(p)).join('')}</div>`;
-            fieldHtml += sectorLayout(sectors[POSITIONS.GOALKEEPER], '85%', '15%');
-            fieldHtml += sectorLayout(sectors[POSITIONS.DEFENDER], '65%', '20%');
-            fieldHtml += sectorLayout(sectors[POSITIONS.MIDFIELDER], '40%', '25%');
-            fieldHtml += sectorLayout(sectors[POSITIONS.ATTACKER], '15%', '25%');
+            
+            const sectorLayout = (content, top, height) => `<div class="absolute flex justify-around items-center w-full" style="top: ${top}; height: ${height};">${content.join('')}</div>`;
+            
+            fieldHtml += sectorLayout(layout[POSITIONS.GOALKEEPER], '85%', '15%');
+            fieldHtml += sectorLayout(layout[POSITIONS.DEFENDER], '65%', '20%');
+            fieldHtml += sectorLayout(layout[POSITIONS.MIDFIELDER], '40%', '25%');
+            fieldHtml += sectorLayout(layout[POSITIONS.ATTACKER], '15%', '25%');
 
             const container = document.createElement('div');
-            container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
+            container.className = UI_CLASSES.CARD;
             container.innerHTML = `
                 <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4">
                     <h2 class="text-2xl font-bold">Táticas e Escalação</h2>
@@ -1367,7 +1699,7 @@
                             <option value="4-3-3" ${team.tactic === '4-3-3' ? 'selected' : ''}>4-3-3</option>
                             <option value="5-3-2" ${team.tactic === '5-3-2' ? 'selected' : ''}>5-3-2</option>
                         </select>
-                        <button onclick="changeView('dashboard')" class="w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar</button>
+                        <button onclick="changeView('dashboard')" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.BLUE} w-full sm:w-auto">&larr; Voltar</button>
                     </div>
                 </div>
                 <div class="pitch w-full h-96 md:h-[500px] rounded-lg mb-4 overflow-hidden relative">${fieldHtml}</div>
@@ -1383,8 +1715,8 @@
             const sortedTable = sortData(gameState.leagueTable, key, order);
 
             const container = document.createElement('div');
-            container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
-            container.innerHTML = `<div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4"><h2 class="text-2xl font-bold">Tabela do Campeonato</h2><button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button></div>${renderTable('league', 
+            container.className = UI_CLASSES.CARD;
+            container.innerHTML = `<div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4"><h2 class="text-2xl font-bold">Tabela do Campeonato</h2><button onclick="changeView('dashboard')" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.BLUE} mt-3 sm:mt-0 w-full sm:w-auto">&larr; Voltar ao Painel</button></div>${renderTable('league', 
                 [
                     { header: '#', key: 'position', sortable: false, tooltip: 'Posição' },
                     { header: 'Time', key: 'teamName', tooltip: 'Nome do Time' },
@@ -1417,16 +1749,10 @@
             const getPositionChangeIcon = (teamId) => {
                 const oldPosition = gameState.roundPositionsBefore[teamId];
                 const newPosition = positionsAfter[teamId];
-                if (oldPosition && newPosition) {
-                    if (newPosition < oldPosition) {
-                        return `<span class="text-green-500 font-bold text-lg" title="Subiu na tabela!">▲</span>`;
-                    } else if (newPosition > oldPosition) {
-                        return `<span class="text-red-500 font-bold text-lg" title="Desceu na tabela!">▼</span>`;
-                    } else {
-                        return `<span class="text-gray-500 font-bold text-lg" title="Posição mantida.">▬</span>`;
-                    }
-                }
-                return '';
+                if (!oldPosition || !newPosition) return `<span class="text-gray-500 font-bold text-lg" title="Posição mantida.">▬</span>`;
+                if (newPosition < oldPosition) return `<span class="text-green-500 font-bold text-lg" title="Subiu na tabela!">▲</span>`;
+                if (newPosition > oldPosition) return `<span class="text-red-500 font-bold text-lg" title="Desceu na tabela!">▼</span>`;
+                return `<span class="text-gray-500 font-bold text-lg" title="Posição mantida.">▬</span>`;
             };
 
             let eventsHTML = '';
@@ -1456,9 +1782,10 @@
                 </div>`;
             }
 
-
             const isEndOfSeason = gameState.currentRound > gameState.fixtures.length;
             const nextRoundButtonText = isEndOfSeason ? "Ver Resumo da Temporada" : "Simular Próxima Rodada";
+            const lineupValidation = getPlayerLineupValidation();
+            const nextRoundButtonDisabled = !isEndOfSeason && !lineupValidation.valid;
             const nextRoundButtonAction = isEndOfSeason ? `handleEndOfSeason()` : `simulateRound()`;
 
             const playerMatch = gameState.lastRoundResults.find(r => r.homeTeamId === playerTeamId || r.awayTeamId === playerTeamId);
@@ -1466,13 +1793,16 @@
             const sortedResults = playerMatch ? [playerMatch, ...otherMatches] : gameState.lastRoundResults;
 
             const container = document.createElement('div');
-            container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
+            container.className = UI_CLASSES.CARD;
             container.innerHTML = `
                 <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4">
                     <h2 class="text-2xl font-bold">Resultados da Rodada ${gameState.currentRound - 1}</h2>
                     <div class="flex items-center space-x-2 mt-3 sm:mt-0">
-                        <button onclick="changeView('dashboard')" class="px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">Ir para o Painel</button>
-                        <button onclick="${nextRoundButtonAction}" class="px-4 py-2 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 transition shadow">${nextRoundButtonText}</button>
+                        <button onclick="changeView('dashboard')" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.BLUE}">Ir para o Painel</button>
+                        <button onclick="${nextRoundButtonDisabled ? '' : nextRoundButtonAction}" 
+                                class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.RED} font-bold"
+                                ${nextRoundButtonDisabled ? 'disabled' : ''}
+                                title="${lineupValidation.message}">${nextRoundButtonText}</button>
                     </div>
                 </div>
                 <div class="space-y-3">
@@ -1534,7 +1864,7 @@
             `;
 
             const container = document.createElement('div');
-            container.className = "bg-white shadow-md rounded-lg p-6";
+            container.className = UI_CLASSES.CARD;
             container.innerHTML = `
                 <h2 class="text-2xl font-bold mb-4 text-center">Resumo da Temporada ${gameState.currentYear}</h2>
                 
@@ -1560,7 +1890,7 @@
                     ${renderList('Jogadores que Regrediram', declined, 'yellow')}
                     ${renderList('Jogadores Aposentados', retired, 'red')}
                 </div>
-                <button onclick="changeView('contract-renewals')" class="w-full mt-8 p-3 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 transition shadow">Ir para Renovações de Contrato</button>`;
+                <button onclick="changeView('contract-renewals')" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.BLUE} ${UI_CLASSES.BTN_SIZES.FULL_P3} mt-8">Ir para Renovações de Contrato</button>`;
             mainContent.appendChild(container);
         }
 
@@ -1570,11 +1900,11 @@
             const totalSalary = team.players.reduce((sum, p) => sum + p.salary, 0);
 
             const container = document.createElement('div');
-            container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
+            container.className = UI_CLASSES.CARD;
             container.innerHTML = `
                 <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6">
                     <h2 class="text-2xl font-bold">Relatório Financeiro</h2>
-                    <button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button>
+                    <button onclick="changeView('dashboard')" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.BLUE} mt-3 sm:mt-0 w-full sm:w-auto">&larr; Voltar ao Painel</button>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
                     <div class="bg-blue-100 p-4 rounded-lg">
@@ -1597,9 +1927,9 @@
                 ${renderTable('finances', 
                     [
                         { header: 'Nome', key: 'name' },
+                        { header: 'Personalidade', key: 'personality' }, 
                         { header: 'Idade', key: 'age' },
                         { header: 'Habil.', key: 'skill', class: 'text-center' },
-                        { header: 'Stamina', key: 'stamina', class: 'text-center' },
                         { header: 'Salário Mensal', key: 'salary', class: 'text-right', format: 'currency' }
                     ],
                     team.players
@@ -1641,7 +1971,7 @@
                             </tbody>
                         </table>
                     </div>`;
-            } else { // Awards History
+            } else { // Histórico de Prêmios
                  contentHTML = gameState.awardsHistory.slice().reverse().map(history => {
                     const renderAward = (title, player, detail) => {
                         if (!player) return '';
@@ -1665,13 +1995,13 @@
             }
 
             const container = document.createElement('div');
-            container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
+            container.className = UI_CLASSES.CARD;
             container.innerHTML = `
                 <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4">
                     <h2 class="text-2xl font-bold">Estatísticas e Histórico</h2>
-                    <button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button>
+                    <button onclick="changeView('dashboard')" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.BLUE} mt-3 sm:mt-0 w-full sm:w-auto">&larr; Voltar ao Painel</button>
                 </div>
-                <!-- Tabs -->
+                <!-- Abas -->
                 <div class="border-b border-gray-200 mb-4">
                     <nav class="-mb-px flex space-x-6">
                         <button onclick="changeView('statistics', {tab: 'scorers'})" class="py-2 px-1 border-b-2 font-medium text-sm ${scorersTabActive ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}">Artilheiros</button>
@@ -1692,18 +2022,18 @@
             const maxLevel = team.youthAcademyLevel >= 5;
 
             const container = document.createElement('div');
-            container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
+            container.className = UI_CLASSES.CARD;
             container.innerHTML = `
                 <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6">
                     <h2 class="text-2xl font-bold">Academia de Jovens</h2>
-                    <button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button>
+                    <button onclick="changeView('dashboard')" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.BLUE} mt-3 sm:mt-0 w-full sm:w-auto">&larr; Voltar ao Painel</button>
                 </div>
                 <div class="bg-gray-100 p-4 rounded-lg mb-6">
                     <h3 class="text-lg font-bold">Estrutura da Academia</h3>
                     <p>Nível Atual: <span class="font-bold text-blue-600">${team.youthAcademyLevel}</span></p>
                     ${!maxLevel ? `
                         <p>Custo para próximo nível: <span class="font-bold text-red-600">R$ ${upgradeCost.toLocaleString('pt-BR')}</span></p>
-                        <button onclick="upgradeAcademy()" class="mt-2 px-4 py-2 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 transition shadow">Melhorar Academia</button>
+                        <button onclick="upgradeAcademy()" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.GREEN} mt-2">Melhorar Academia</button>
                     ` : '<p class="font-bold text-green-600">Sua academia já está no nível máximo!</p>'}
                 </div>
 
@@ -1711,13 +2041,14 @@
                 ${renderTable('academy',
                     [
                         { header: 'Nome', key: 'name' },
+                        { header: 'Personalidade', key: 'personality' }, 
                         { header: 'Idade', key: 'age' },
                         { header: 'Pos.', key: 'position' },
                         { header: 'Habil.', key: 'skill', class: 'text-center' },
                         { header: 'Ação', key: 'action', class: 'text-center' }
                     ],
                     sortedYouth,
-                    (p) => `<button onclick="promoteYouthPlayer('${p.id}')" class="px-3 py-1 bg-blue-500 text-white text-xs font-bold rounded hover:bg-blue-600 transition">Promover</button>`
+                    (p) => `<button onclick="promoteYouthPlayer('${p.id}')" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.BLUE} ${UI_CLASSES.BTN_SIZES.SMALL}">Promover</button>`
                 )}
             `;
             mainContent.appendChild(container);
@@ -1729,11 +2060,11 @@
             const maxLevel = team.stadiumLevel >= 5;
 
             const container = document.createElement('div');
-            container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
+            container.className = UI_CLASSES.CARD;
             container.innerHTML = `
                 <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6">
                     <h2 class="text-2xl font-bold">Gestão do Estádio</h2>
-                    <button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button>
+                    <button onclick="changeView('dashboard')" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.BLUE} mt-3 sm:mt-0 w-full sm:w-auto">&larr; Voltar ao Painel</button>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
                     <div class="bg-blue-100 p-4 rounded-lg">
@@ -1754,8 +2085,8 @@
                     ${!maxLevel ? `
                         <p class="text-center">Melhore seu estádio para aumentar a capacidade e a renda com ingressos.</p>
                         <p class="text-center mt-2">Custo para o Nível ${stadiumInfo.level + 1}: <span class="font-bold text-red-600">R$ ${stadiumInfo.upgradeCost.toLocaleString('pt-BR')}</span></p>
-                        <button onclick="upgradeStadium()" class="w-full mt-4 p-3 bg-green-500 text-white rounded-lg font-bold hover:bg-green-600 transition shadow">Melhorar para Nível ${stadiumInfo.level + 1}</button>
-                    ` : '<p class="text-center font-bold text-green-600">Seu estádio já está no nível máximo!</p>'}
+                        <button onclick="upgradeStadium()" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.GREEN} ${UI_CLASSES.BTN_SIZES.FULL_P3} mt-4">Melhorar para Nível ${stadiumInfo.level + 1}</button>
+                    ` : '<p class="font-bold text-green-600">Seu estádio já está no nível máximo!</p>'}
                 </div>
             `;
             mainContent.appendChild(container);
@@ -1774,14 +2105,14 @@
                 tableContentHTML = renderTable(viewKey,
                     [
                         { header: 'Nome', key: 'name' },
+                        { header: 'Personalidade', key: 'personality' }, 
                         { header: 'Pos.', key: 'position' },
                         { header: 'Habil.', key: 'skill', class: 'text-center' },
-                        { header: 'Salário', key: 'salary', class: 'text-right', format: 'currency' },
                         { header: 'Valor', key: 'value', class: 'text-right', format: 'currency' },
                         { header: 'Ação', key: 'action', class: 'text-center' }
                     ],
                     availablePlayers,
-                    (p) => `<button ${playerTeam.cash >= p.value && !playerTeam.transferEmbargo ? '' : 'disabled'} onclick="buyPlayer('${p.id}')" class="px-3 py-1 bg-green-500 text-white text-xs font-bold rounded hover:bg-green-600 transition disabled:opacity-50 disabled:cursor-not-allowed">Comprar</button>`
+                    (p) => `<button ${playerTeam.cash >= p.value && !playerTeam.transferEmbargo ? '' : 'disabled'} onclick="buyPlayer('${p.id}')" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.GREEN} ${UI_CLASSES.BTN_SIZES.SMALL}">Comprar</button>`
                 );
             } else {
                 const viewKey = 'transfers-sell';
@@ -1790,19 +2121,19 @@
                 tableContentHTML = renderTable(viewKey,
                     [
                         { header: 'Nome', key: 'name' },
+                        { header: 'Personalidade', key: 'personality' }, 
                         { header: 'Pos.', key: 'position' },
                         { header: 'Habil.', key: 'skill', class: 'text-center' },
-                        { header: 'Salário', key: 'salary', class: 'text-right', format: 'currency' },
                         { header: 'Valor', key: 'value', class: 'text-right', format: 'currency' },
                         { header: 'Ação', key: 'action', class: 'text-center' }
                     ],
                     sortedPlayers,
-                    (p) => `<button onclick="sellPlayer('${p.id}')" class="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded hover:bg-red-600 transition">Vender</button>`
+                    (p) => `<button onclick="sellPlayer('${p.id}')" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.RED} ${UI_CLASSES.BTN_SIZES.SMALL}">Vender</button>`
                 );
             }
             const container = document.createElement('div');
-            container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
-            container.innerHTML = `<div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4"><h2 class="text-2xl font-bold">Mercado de Transferências</h2><button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button></div><div class="border-b border-gray-200 mb-4"><nav class="-mb-px flex space-x-6"><button onclick="changeView('transfers', {tab: 'buy'})" class="py-2 px-1 border-b-2 font-medium text-sm ${buyTabActive ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}">Comprar Jogadores</button><button onclick="changeView('transfers', {tab: 'sell'})" class="py-2 px-1 border-b-2 font-medium text-sm ${!buyTabActive ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}">Vender Jogadores</button></nav></div>${tableContentHTML}`;
+            container.className = UI_CLASSES.CARD;
+            container.innerHTML = `<div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4"><h2 class="text-2xl font-bold">Mercado de Transferências</h2><button onclick="changeView('dashboard')" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.BLUE} mt-3 sm:mt-0 w-full sm:w-auto">&larr; Voltar ao Painel</button></div><div class="border-b border-gray-200 mb-4"><nav class="-mb-px flex space-x-6"><button onclick="changeView('transfers', {tab: 'buy'})" class="py-2 px-1 border-b-2 font-medium text-sm ${buyTabActive ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}">Comprar Jogadores</button><button onclick="changeView('transfers', {tab: 'sell'})" class="py-2 px-1 border-b-2 font-medium text-sm ${!buyTabActive ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}">Vender Jogadores</button></nav></div>${tableContentHTML}`;
             mainContent.appendChild(container);
         }
         
@@ -1823,6 +2154,10 @@
                     }
                     if (col.format === 'currency') {
                         cellValue = `R$ ${cellValue.toLocaleString('pt-BR')}`;
+                    }
+                    if (col.key === 'personality') {
+                        const personalityInfo = PERSONALITIES.find(p => p.id === cellValue);
+                        return `<td class="p-3 ${col.class || ''}"><div class="tooltip">${cellValue}<span class="tooltiptext">${personalityInfo?.description || ''}</span></div></td>`;
                     }
                     if (col.format === 'morale') {
                         let statusText = '';
@@ -1861,11 +2196,11 @@
             const sortedPlayers = sortData(team.players, key, order);
 
             const container = document.createElement('div');
-            container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
+            container.className = UI_CLASSES.CARD;
             container.innerHTML = `
                 <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6">
                     <h2 class="text-2xl font-bold">Moral do Time</h2>
-                    <button onclick="changeView('dashboard')" class="mt-3 sm:mt-0 w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">&larr; Voltar ao Painel</button>
+                    <button onclick="changeView('dashboard')" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.BLUE} mt-3 sm:mt-0 w-full sm:w-auto">&larr; Voltar ao Painel</button>
                 </div>
                 <div class="mb-4 p-2 bg-gray-100 rounded-lg text-center">
                     <p>Conversas disponíveis nesta rodada: <span class="font-bold text-blue-600">${gameState.conversationsLeft}</span></p>
@@ -1873,8 +2208,8 @@
                 ${renderTable('morale',
                     [
                         { header: 'Nome', key: 'name' },
+                        { header: 'Personalidade', key: 'personality' }, 
                         { header: 'Moral', key: 'morale', format: 'morale', class: 'text-center' },
-                        { header: 'Stamina', key: 'stamina', class: 'text-center' },
                         { header: 'Ação', key: 'action', class: 'text-center' }
                     ],
                     sortedPlayers,
@@ -1884,8 +2219,8 @@
                         const cantAdjust = p.salaryAdjustedThisSeason || p.morale > 70;
                         return `
                             <div class="flex justify-center items-center space-x-2">
-                                <button onclick="talkToPlayer('${p.id}')" class="px-3 py-1 bg-blue-500 text-white text-xs font-bold rounded hover:bg-blue-600 transition disabled:opacity-50 disabled:cursor-not-allowed" ${cantTalk ? 'disabled' : ''}>Conversar</button>
-                                <button onclick="adjustSalary('${p.id}')" class="px-3 py-1 bg-green-500 text-white text-xs font-bold rounded hover:bg-green-600 transition disabled:opacity-50 disabled:cursor-not-allowed" ${cantAdjust ? 'disabled' : ''}>Reajustar Salário</button>
+                                <button onclick="talkToPlayer('${p.id}')" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.BLUE} ${UI_CLASSES.BTN_SIZES.SMALL}" ${cantTalk ? 'disabled' : ''}>Conversar</button>
+                                <button onclick="adjustSalary('${p.id}')" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.GREEN} ${UI_CLASSES.BTN_SIZES.SMALL}" ${cantAdjust ? 'disabled' : ''}>Reajustar Salário</button>
                             </div>
                         `;
                     }
@@ -1896,7 +2231,7 @@
         
         function renderSponsorshipSelection() {
             const container = document.createElement('div');
-            container.className = "bg-white shadow-md rounded-lg p-6";
+            container.className = UI_CLASSES.CARD;
             container.innerHTML = `
                 <h2 class="text-2xl font-bold mb-4 text-center">Escolha seu Patrocinador para a Temporada ${gameState.currentYear}</h2>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
@@ -1908,7 +2243,7 @@
                                 <p class="text-lg font-semibold">Valor Fixo: <span class="text-green-600">R$ ${s.fixedValue.toLocaleString('pt-BR')}</span></p>
                                 <p class="text-lg font-semibold">Bônus por Vitória: <span class="text-green-600">R$ ${s.winBonus.toLocaleString('pt-BR')}</span></p>
                             </div>
-                            <button onclick="selectSponsor(${s.id})" class="mt-auto w-full px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition">Assinar Contrato</button>
+                            <button onclick="selectSponsor(${s.id})" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.BLUE} mt-auto w-full">Assinar Contrato</button>
                         </div>
                     `).join('')}
                 </div>
@@ -1921,7 +2256,7 @@
             const expiringPlayers = team.players.filter(p => p.contractEndYear <= gameState.currentYear);
 
             const container = document.createElement('div');
-            container.className = "bg-white shadow-md rounded-lg p-4 sm:p-6";
+            container.className = UI_CLASSES.CARD;
             
             let contentHTML = '';
             if (expiringPlayers.length === 0) {
@@ -1930,6 +2265,7 @@
                 contentHTML = renderTable('renewals',
                     [
                         { header: 'Nome', key: 'name' },
+                        { header: 'Personalidade', key: 'personality' }, 
                         { header: 'Idade', key: 'age', class: 'text-center' },
                         { header: 'Habil.', key: 'skill', class: 'text-center' },
                         { header: 'Salário Atual', key: 'salary', class: 'text-right', format: 'currency' },
@@ -1937,8 +2273,8 @@
                     ],
                     expiringPlayers,
                     (p) => `<div class="flex justify-center space-x-2">
-                                <button onclick="renewContract('${p.id}')" class="px-3 py-1 bg-green-500 text-white text-xs font-bold rounded hover:bg-green-600 transition">Renovar</button>
-                                <button onclick="releasePlayer('${p.id}')" class="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded hover:bg-red-600 transition">Dispensar</button>
+                                <button onclick="renewContract('${p.id}')" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.GREEN} ${UI_CLASSES.BTN_SIZES.SMALL}">Renovar</button>
+                                <button onclick="releasePlayer('${p.id}')" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.RED} ${UI_CLASSES.BTN_SIZES.SMALL}">Dispensar</button>
                             </div>`
                 );
             }
@@ -1948,7 +2284,7 @@
                     <h2 class="text-2xl font-bold">Renovações de Contrato (${gameState.currentYear})</h2>
                 </div>
                 ${contentHTML}
-                <button onclick="startNewSeason()" class="w-full mt-8 p-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition shadow">Iniciar Temporada ${gameState.currentYear + 1}</button>
+                <button onclick="startNewSeason()" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.BLUE} ${UI_CLASSES.BTN_SIZES.FULL_P3} mt-8">Iniciar Temporada ${gameState.currentYear + 1}</button>
             `;
             mainContent.appendChild(container);
         }
@@ -1959,7 +2295,7 @@
             const awayTeam = gameState.teams.find(t => t.id === match.awayTeamId);
 
             const container = document.createElement('div');
-            container.className = "bg-white shadow-md rounded-lg p-6";
+            container.className = UI_CLASSES.CARD;
             container.innerHTML = `
                 <div class="text-center mb-4">
                     <h2 class="text-2xl font-bold">Dia de Jogo!</h2>
@@ -1967,11 +2303,11 @@
                 </div>
                 
                 <div id="match-controls" class="mb-4">
-                     <button id="start-match-btn" onclick="runMatchSimulation()" class="w-full p-3 bg-green-500 text-white rounded-lg font-bold hover:bg-green-600 transition shadow">Iniciar Partida</button>
+                     <button id="start-match-btn" onclick="runMatchSimulation()" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.GREEN} ${UI_CLASSES.BTN_SIZES.FULL_P3}">Iniciar Partida</button>
                 </div>
 
                 <div id="commentary-box" class="h-64 bg-gray-800 text-white font-mono text-sm p-4 rounded-lg overflow-y-auto">
-                    <!-- Commentary will appear here -->
+                    <!-- Comentários aparecerão aqui -->
                 </div>
             `;
             mainContent.appendChild(container);
@@ -1980,7 +2316,7 @@
         function renderBoardMeeting() {
             const playerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
             const container = document.createElement('div');
-            container.className = "bg-white shadow-md rounded-lg p-6 text-center";
+            container.className = UI_CLASSES.CARD + " text-center";
             container.innerHTML = `
                 <h2 class="text-2xl font-bold mb-2">Reunião com a Diretoria</h2>
                 <p class="mb-6 text-gray-600">A diretoria se reuniu e definiu as seguintes metas para a temporada ${gameState.currentYear}. Contamos com você!</p>
@@ -1989,7 +2325,7 @@
                         ${playerTeam.boardObjectives.map(obj => `<li class="text-lg">${obj.text}</li>`).join('')}
                     </ul>
                 </div>
-                <button onclick="changeView('dashboard')" class="w-full mt-8 p-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition shadow">Aceitar Desafio e Ir para o Painel</button>
+                <button onclick="changeView('dashboard')" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.BLUE} ${UI_CLASSES.BTN_SIZES.FULL_P3} mt-8">Aceitar Desafio e Ir para o Painel</button>
             `;
             mainContent.appendChild(container);
         }
@@ -1999,7 +2335,7 @@
             const failedReason = objectivesResult.find(r => !r.met)?.text || "Não cumpriu as metas estabelecidas.";
 
             const container = document.createElement('div');
-            container.className = "bg-white shadow-md rounded-lg p-6 text-center";
+            container.className = UI_CLASSES.CARD + " text-center";
             container.innerHTML = `
                 <h2 class="text-4xl font-bold mb-4 text-red-600">FIM DE JOGO</h2>
                 <p class="text-xl mb-2">Você foi demitido!</p>
@@ -2007,7 +2343,7 @@
                 <div class="bg-red-100 p-4 rounded-lg text-red-800 font-semibold mb-8">
                     <p>Motivo: ${failedReason}</p>
                 </div>
-                <button onclick="startNewGame()" class="px-8 py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition shadow">Iniciar uma Nova Carreira</button>
+                <button onclick="startNewGame()" class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.BLUE} px-8 py-3">Iniciar uma Nova Carreira</button>
             `;
             mainContent.appendChild(container);
         }
@@ -2016,7 +2352,7 @@
         function runMatchSimulation() {
             const matchControlsDiv = document.getElementById('match-controls');
             if (matchControlsDiv) {
-                matchControlsDiv.innerHTML = `<button class="w-full p-3 bg-gray-500 text-white rounded-lg font-bold transition shadow cursor-not-allowed" disabled>Simulando...</button>`;
+                matchControlsDiv.innerHTML = `<button class="${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.GRAY} ${UI_CLASSES.BTN_SIZES.FULL_P3}" disabled>Simulando...</button>`;
             }
 
             const commentaryBox = document.getElementById('commentary-box');
@@ -2041,19 +2377,19 @@
                     if (matchControlsDiv) {
                         const continueBtn = document.createElement('button');
                         continueBtn.textContent = 'Ver Resultados da Rodada';
-                        continueBtn.className = 'w-full p-3 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 transition shadow';
+                        continueBtn.className = `${UI_CLASSES.BTN} ${UI_CLASSES.BTN_COLORS.BLUE} ${UI_CLASSES.BTN_SIZES.FULL_P3}`;
                         continueBtn.onclick = () => {
                             gameState.currentRound++;
                             changeView('round-results');
                         };
-                        matchControlsDiv.innerHTML = ''; // Clear "Simulando..."
+                        matchControlsDiv.innerHTML = ''; // Limpa "Simulando..."
                         matchControlsDiv.appendChild(continueBtn);
                     }
                 }
             }, 100);
         }
 
-        // --- GAME START ---
+        // --- INÍCIO DO JOGO ---
         document.addEventListener('DOMContentLoaded', initGame);
     </script>
 

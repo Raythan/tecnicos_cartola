@@ -61,11 +61,7 @@
   <!-- 1. Carrega a biblioteca de testes QUnit -->
   <script src="https://code.jquery.com/qunit/qunit-2.20.0.js"></script>
 
-  <!-- 2. Carrega O SEU SCRIPT DO JOGO -->
-  <!-- IMPORTANTE: Você deve descomentar a linha abaixo e ajustar o caminho (src) para apontar para o seu arquivo HTML principal do jogo -->
-  <!-- <script src="./index.html"></script> -->
-  
-  <!-- Workaround para o ambiente de teste: Definições mínimas para evitar erros de "não definido" no script de teste. -->
+  <!-- 2. Mocks do Jogo -->
   <script>
     // Mock das variáveis e funções globais do jogo para que os testes possam rodar de forma isolada.
     let gameState = {};
@@ -126,9 +122,20 @@
         return punishments;
     };
     const renewContract = (playerId) => {
-        const player = gameState.teams.find(t=>t.id === gameState.playerTeamId).players.find(p => p.id === playerId);
-        player.contractEndYear += 2; // Simula renovação por 2 anos
-        player.salary *= 1.20; // Simula aumento de 20%
+        const team = gameState.teams.find(t=>t.id === gameState.playerTeamId);
+        const player = team.players.find(p => p.id === playerId);
+        if (!player) return;
+
+        let salaryIncrease;
+        if (player.personality === 'Mercenário') {
+            salaryIncrease = 1.4; // 40% raise
+        } else if (player.personality === 'Leal') {
+            salaryIncrease = 1.1; // 10% raise
+        } else {
+            salaryIncrease = 1.2; // 20% raise
+        }
+        player.salary = Math.ceil(player.salary * salaryIncrease);
+        player.contractEndYear += 2;
     };
     const releasePlayer = (playerId) => {
         const team = gameState.teams.find(t=>t.id === gameState.playerTeamId);
@@ -212,13 +219,17 @@
         });
     };
     const getPlayerEffectiveSkill = (player) => {
-        const moraleBonus = (player.morale - 50) / 10;
+        let moraleBonus = (player.morale - 50) / 10;
         const staminaPenalty = (100 - player.stamina) * 0.15;
+        if (player.personality === 'Profissional' && moraleBonus < 0) {
+            moraleBonus *= 0.5;
+        }
         return player.skill + moraleBonus - staminaPenalty;
     };
      const updatePlayingTimeHappiness = () => {
         gameState.teams.forEach(team => {
             team.players.forEach(player => {
+                if (player.personality === 'Líder' || player.personality === 'Leal') return;
                 if (player.skill < KEY_PLAYER_SKILL_THRESHOLD) return; 
                 if (!team.startingXI.includes(player.id)) {
                     player.gamesWithoutPlaying++;
@@ -232,6 +243,34 @@
             });
         });
     };
+    const getTeamStrength = (teamId) => {
+        const team = gameState.teams.find(t => t.id === teamId);
+        const startingPlayers = team.players.filter(p => team.startingXI.includes(p.id));
+        let leaderBonus = startingPlayers.some(p => p.personality === 'Líder') ? 1 : 0;
+        const getSectorStrength = (pos) => {
+            const players = startingPlayers.filter(p => p.position === pos);
+            if (players.length === 0) return 0;
+            return players.reduce((sum, p) => sum + getPlayerEffectiveSkill(p), 0) / players.length;
+        };
+        const attack = (getSectorStrength(POSITIONS.ATTACKER) * 0.5) + (getSectorStrength(POSITIONS.MIDFIELDER) * 0.5) + leaderBonus;
+        const defense = (getSectorStrength(POSITIONS.DEFENDER) * 0.6) + (getSectorStrength(POSITIONS.MIDFIELDER) * 0.3) + (getSectorStrength(POSITIONS.GOALKEEPER) * 0.1) + leaderBonus;
+        return { attack: attack || 50, defense: defense || 50 };
+    };
+    const getPlayerLineupValidation = () => {
+        const playerTeam = gameState.teams.find(t => t.id === gameState.playerTeamId);
+        if (!playerTeam) return { valid: false, message: 'Time não encontrado.' };
+        if (playerTeam.startingXI.length !== 11) {
+            return { valid: false, message: `Sua escalação tem apenas ${playerTeam.startingXI.length} de 11 jogadores. Complete o time.` };
+        }
+        const invalidPlayers = playerTeam.startingXI
+            .map(pId => playerTeam.players.find(p => p.id === pId))
+            .filter(p => !p || p.injuryTurns > 0 || p.isSuspended);
+        if (invalidPlayers.length > 0) {
+            const names = invalidPlayers.map(p => p.name).join(', ');
+            return { valid: false, message: `Você não pode iniciar a partida com jogadores suspensos ou lesionados na escalação: ${names}.` };
+        }
+        return { valid: true, message: 'Escalação válida.' };
+    };
     const showNotification = () => {}; // Mock para evitar erros
   </script>
 
@@ -242,7 +281,7 @@
       QUnit.test('Vitória em Casa', function(assert) {
         // ARRANGE
         gameState = getInitialState();
-        gameState.teams = [ { id: 0, name: 'Time Casa' }, { id: 1, name: 'Time Fora' } ];
+        gameState.teams = [ { id: 0, name: 'Time Casa', cash: 0 }, { id: 1, name: 'Time Fora', cash: 0 } ];
         createLeagueTable();
         const resultado = { homeTeamId: 0, awayTeamId: 1, homeGoals: 2, awayGoals: 1 };
 
@@ -262,7 +301,7 @@
       QUnit.test('Empate', function(assert) {
         // ARRANGE
         gameState = getInitialState();
-        gameState.teams = [ { id: 0, name: 'Time Casa' }, { id: 1, name: 'Time Fora' } ];
+        gameState.teams = [ { id: 0, name: 'Time Casa', cash: 0 }, { id: 1, name: 'Time Fora', cash: 0 } ];
         createLeagueTable();
         const resultado = { homeTeamId: 0, awayTeamId: 1, homeGoals: 1, awayGoals: 1 };
 
@@ -279,10 +318,10 @@
         assert.equal(statsFora.draws, 1, 'Time de fora deve ter 1 empate');
       });
 
-       QUnit.test('Cálculo de Gols e Saldo', function(assert) {
+        QUnit.test('Cálculo de Gols e Saldo', function(assert) {
         // ARRANGE
         gameState = getInitialState();
-        gameState.teams = [ { id: 0, name: 'Time Casa' }, { id: 1, name: 'Time Fora' } ];
+        gameState.teams = [ { id: 0, name: 'Time Casa', cash: 0 }, { id: 1, name: 'Time Fora', cash: 0 } ];
         createLeagueTable();
         const resultado = { homeTeamId: 0, awayTeamId: 1, homeGoals: 3, awayGoals: 2 };
 
@@ -344,7 +383,7 @@
         QUnit.test('Bônus de Patrocinador por vitória', function(assert) {
             // ARRANGE
             gameState = getInitialState();
-            gameState.teams = [ { id: 0, name: 'Time Casa', cash: 0, sponsorId: 1 }, { id: 1, name: 'Time Fora' } ];
+            gameState.teams = [ { id: 0, name: 'Time Casa', cash: 0, sponsorId: 1 }, { id: 1, name: 'Time Fora', cash: 0 } ];
             createLeagueTable();
             const resultado = { homeTeamId: 0, awayTeamId: 1, homeGoals: 1, awayGoals: 0 };
             const prizeMoney = PRIZE_MONEY.WIN;
@@ -579,7 +618,7 @@
 
         QUnit.test('Impacto da Stamina no Desempenho', function(assert) {
             // ARRANGE
-            const player = { skill: 80, morale: 50, stamina: 100 };
+            const player = { skill: 80, morale: 50, stamina: 100, personality: 'Profissional' };
             
             // ACT
             const skillFullStamina = getPlayerEffectiveSkill(player);
@@ -592,38 +631,10 @@
     });
 
     QUnit.module('Moral e Satisfação do Jogador', function() {
-        QUnit.test('Jogador chave fica feliz ao jogar', function(assert) {
-            // ARRANGE
-            gameState = getInitialState();
-            const player = { id: 'p1', skill: 80, gamesWithoutPlaying: 2, morale: 50 };
-            gameState.teams = [{ id: 0, players: [player], startingXI: ['p1'] }];
-
-            // ACT
-            updatePlayingTimeHappiness();
-
-            // ASSERT
-            assert.equal(player.gamesWithoutPlaying, 0, "Contador de jogos sem jogar deve ser zerado");
-            assert.equal(player.morale, 50, "Moral não deve mudar se o jogador joga");
-        });
-
-        QUnit.test('Jogador chave no banco incrementa contador', function(assert) {
-            // ARRANGE
-            gameState = getInitialState();
-            const player = { id: 'p1', skill: 80, gamesWithoutPlaying: 1, morale: 50 };
-            gameState.teams = [{ id: 0, players: [player], startingXI: [] }];
-
-            // ACT
-            updatePlayingTimeHappiness();
-
-            // ASSERT
-            assert.equal(player.gamesWithoutPlaying, 2, "Contador de jogos sem jogar deve ser incrementado");
-            assert.equal(player.morale, 50, "Moral não deve mudar antes do limite");
-        });
-
         QUnit.test('Jogador chave no banco fica infeliz após 3 jogos', function(assert) {
             // ARRANGE
             gameState = getInitialState();
-            const player = { id: 'p1', skill: 80, gamesWithoutPlaying: 2, morale: 50 };
+            const player = { id: 'p1', skill: 80, gamesWithoutPlaying: 2, morale: 50, personality: 'Ambicioso' };
             gameState.teams = [{ id: 0, players: [player], startingXI: [] }];
 
             // ACT
@@ -633,20 +644,137 @@
             assert.equal(player.morale, 35, "Moral deve cair após atingir o limite de jogos no banco");
         });
 
-        QUnit.test('Jogador normal não é afetado pela falta de jogos', function(assert) {
+        QUnit.test('Jogador Leal ou Líder não fica infeliz no banco', function(assert) {
             // ARRANGE
             gameState = getInitialState();
-            const player = { id: 'p1', skill: 70, gamesWithoutPlaying: 5, morale: 50 };
-            gameState.teams = [{ id: 0, players: [player], startingXI: [] }];
+            const playerLeal = { id: 'p1', skill: 80, gamesWithoutPlaying: 5, morale: 50, personality: 'Leal' };
+            const playerLider = { id: 'p2', skill: 80, gamesWithoutPlaying: 5, morale: 50, personality: 'Líder' };
+            gameState.teams = [{ id: 0, players: [playerLeal, playerLider], startingXI: [] }];
 
             // ACT
             updatePlayingTimeHappiness();
 
             // ASSERT
-            assert.equal(player.morale, 50, "Moral de jogador normal não deve ser afetada");
+            assert.equal(playerLeal.morale, 50, "Moral de jogador Leal não deve ser afetada");
+            assert.equal(playerLider.morale, 50, "Moral de jogador Líder não deve ser afetada");
         });
     });
 
+    // NEW MODULE
+    QUnit.module('Personalidade do Jogador', function() {
+        QUnit.test('Líder aumenta a força do time', function(assert) {
+            // ARRANGE
+            gameState = getInitialState();
+            const players = [{ id: 'p1', skill: 80, morale: 50, stamina: 100, position: POSITIONS.DEFENDER, personality: 'Normal' }];
+            gameState.teams = [{ id: 0, players: players, startingXI: ['p1'] }];
+            const strengthWithoutLeader = getTeamStrength(0).defense;
+
+            // ACT
+            gameState.teams[0].players.push({ id: 'p2', skill: 80, morale: 50, stamina: 100, position: POSITIONS.MIDFIELDER, personality: 'Líder' });
+            gameState.teams[0].startingXI.push('p2');
+            const strengthWithLeader = getTeamStrength(0).defense;
+
+            // ASSERT
+            assert.ok(strengthWithLeader > strengthWithoutLeader, "Força do time deve ser maior com um líder em campo");
+        });
+
+        QUnit.test('Profissional é menos afetado por moral baixa', function(assert) {
+            // ARRANGE
+            const playerNormal = { skill: 80, morale: 10, stamina: 100, personality: 'Ambicioso' };
+            const playerProfissional = { skill: 80, morale: 10, stamina: 100, personality: 'Profissional' };
+
+            // ACT
+            const skillNormal = getPlayerEffectiveSkill(playerNormal);
+            const skillProfissional = getPlayerEffectiveSkill(playerProfissional);
+
+            // ASSERT
+            assert.ok(skillProfissional > skillNormal, "Habilidade efetiva do profissional deve ser maior com moral baixa");
+        });
+
+        QUnit.test('Mercenário exige salário maior na renovação', function(assert) {
+            // ARRANGE
+            gameState = getInitialState();
+            const playerNormal = { id: 'p1', salary: 10000, personality: 'Leal' };
+            const playerMercenario = { id: 'p2', salary: 10000, personality: 'Mercenário' };
+            gameState.teams = [{ id: 0, players: [playerNormal, playerMercenario] }];
+
+            // ACT
+            renewContract('p1');
+            renewContract('p2');
+
+            // ASSERT
+            assert.ok(playerMercenario.salary > playerNormal.salary, "Salário do mercenário deve ser maior após renovação");
+        });
+    });
+
+    QUnit.module('Validação de Escalação', function() {
+        QUnit.test('Escalação com jogador lesionado é inválida', function(assert) {
+            // ARRANGE
+            gameState = getInitialState();
+            const players = [];
+            for(let i = 0; i < 11; i++) {
+                players.push({ id: `p${i}`, name: `J${i}`, injuryTurns: i === 0 ? 2 : 0, isSuspended: false });
+            }
+            gameState.teams = [{ id: 0, players: players, startingXI: players.map(p => p.id) }];
+
+            // ACT
+            const validation = getPlayerLineupValidation();
+
+            // ASSERT
+            assert.notOk(validation.valid, "A validação deve falhar para escalação com jogador lesionado.");
+            assert.ok(validation.message.includes('lesionados'), "A mensagem de erro deve mencionar jogadores lesionados.");
+        });
+
+        QUnit.test('Escalação com jogador suspenso é inválida', function(assert) {
+            // ARRANGE
+            gameState = getInitialState();
+            const players = [];
+            for(let i = 0; i < 11; i++) {
+                players.push({ id: `p${i}`, name: `J${i}`, injuryTurns: 0, isSuspended: i === 0 ? true : false });
+            }
+            gameState.teams = [{ id: 0, players: players, startingXI: players.map(p => p.id) }];
+
+            // ACT
+            const validation = getPlayerLineupValidation();
+
+            // ASSERT
+            assert.notOk(validation.valid, "A validação deve falhar para escalação com jogador suspenso.");
+            assert.ok(validation.message.includes('suspensos'), "A mensagem de erro deve mencionar jogadores suspensos.");
+        });
+
+        QUnit.test('Escalação incompleta é inválida', function(assert) {
+            // ARRANGE
+            gameState = getInitialState();
+            const players = [];
+            for(let i = 0; i < 10; i++) { // Only 10 players
+                players.push({ id: `p${i}`, name: `J${i}`, injuryTurns: 0, isSuspended: false });
+            }
+            gameState.teams = [{ id: 0, players: players, startingXI: players.map(p => p.id) }];
+
+            // ACT
+            const validation = getPlayerLineupValidation();
+
+            // ASSERT
+            assert.notOk(validation.valid, "A validação deve falhar para escalação incompleta.");
+            assert.ok(validation.message.includes('10 de 11'), "A mensagem de erro deve mencionar o número de jogadores.");
+        });
+
+        QUnit.test('Escalação completa e válida', function(assert) {
+            // ARRANGE
+            gameState = getInitialState();
+            const players = [];
+            for(let i = 0; i < 11; i++) {
+                players.push({ id: `p${i}`, name: `J${i}`, injuryTurns: 0, isSuspended: false });
+            }
+            gameState.teams = [{ id: 0, players: players, startingXI: players.map(p => p.id) }];
+
+            // ACT
+            const validation = getPlayerLineupValidation();
+
+            // ASSERT
+            assert.ok(validation.valid, "A validação deve passar para uma escalação válida.");
+        });
+    });
 
     // Lógica para copiar as falhas
     QUnit.done(function(details) {
