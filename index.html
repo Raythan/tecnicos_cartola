@@ -42,6 +42,11 @@
             --prestige-color: #f77fbe;
             --achievement-color: #ffdf00;
             --health-color: #ff4d4d;
+            --crit-color: #ff9900;
+            --rarity-comum: #ffffff;
+            --rarity-incomum: #1eff00;
+            --rarity-raro: #0070dd;
+            --rarity-lendario: #a335ee;
         }
 
         @keyframes floatUp {
@@ -97,6 +102,12 @@
             </div>
         </div>
         
+        <!-- Barra de Evento Aleatório -->
+        <div v-if="activeEvent" class="w-full bg-gradient-to-r from-fuchsia-500 to-cyan-500 text-black p-2 text-center font-pixel text-sm animate__animated animate__fadeInDown">
+            <i :class="['fa-solid', activeEvent.icon, 'mr-2']"></i>
+            <span>{{ activeEvent.description }} ({{ activeEventTimer }}s restantes)</span>
+        </div>
+
         <!-- Área de Ação Principal -->
         <main class="flex-grow flex items-center justify-center p-4">
             <div ref="actionPanelRef" class="relative bg-[#1a1a1a] p-6 rounded-xl border border-gray-700 text-center flex flex-col items-center justify-center w-full max-w-2xl min-h-[300px] sm:min-h-[400px]">
@@ -111,13 +122,18 @@
                     <i :class="['fa-solid', currentEnemy.icon, 'text-7xl sm:text-8xl md:text-9xl']" :style="{ color: currentEnemy.color, filter: `drop-shadow(0 0 15px ${currentEnemy.color})` }"></i>
                 </button>
 
-                <div class="w-3/4 mt-6 text-center">
+                <div class="w-3/4 mt-4 text-center">
                     <p class="font-pixel text-sm text-cyan-400 mb-2">Ciclo de Combate</p>
                     <div class="w-full bg-gray-800 rounded-full h-5 overflow-hidden border-2 border-cyan-500/50">
                         <div class="bg-cyan-400 h-full rounded-full transition-all duration-100 ease-linear" :style="{ width: `${combatProgress}%` }"></div>
                     </div>
                 </div>
                 
+                <div v-if="gameState.comboCount > 1 || gameState.comboBonusActive" class="font-pixel text-lg mt-2 animate__animated animate__pulse" :style="{color: 'var(--crit-color)'}">
+                    <span v-if="gameState.comboBonusActive">BÔNUS DE COMBO! ({{ gameState.comboBonusRoundsLeft }} rodadas)</span>
+                    <span v-else>COMBO x{{ gameState.comboCount }}</span>
+                </div>
+
                 <button @click="openView('enemySelection')" class="font-pixel text-xs py-2 px-4 mt-4 rounded-md bg-gray-600 text-white hover:bg-gray-500 transition">Mudar Alvo</button>
                 
                 <div v-for="text in floatingTexts" :key="text.id" class="floating-text absolute font-pixel text-2xl pointer-events-none" :style="{ top: text.y + 'px', left: text.x + 'px', color: text.color }">
@@ -188,7 +204,7 @@
                                 <h3 class="font-pixel text-cyan-400 text-sm mb-2">{{ title }}</h3>
                                 <div class="grid grid-cols-2 gap-2">
                                     <div v-for="(value, key) in items" :key="key" class="bg-gray-800 p-2 rounded-lg text-center">
-                                        <p class="text-xs capitalize text-gray-400">{{ {attack: 'Ataque', defense: 'Defesa', credsPerClick: 'Creds / Clique', credsPerSecond: 'Creds / Seg', xpMultiplier: 'Bônus de XP', critCredChance: 'Chance de Crítico', prestigeBonus: 'Bônus de Prestígio', achievementBonus: 'Bônus de Conquista', maxHealth: 'Vida Máxima'}[key] || key.replace(/([A-Z])/g, ' $1') }}</p>
+                                        <p class="text-xs capitalize text-gray-400">{{ {attack: 'Ataque', defense: 'Defesa', credsPerClick: 'Creds / Clique', credsPerSecond: 'Creds / Seg', xpMultiplier: 'Bônus de XP', critChance: 'Chance Crítica', critDamageMultiplier: 'Dano Crítico', prestigeBonus: 'Bônus de Prestígio', achievementBonus: 'Bônus de Conquista', maxHealth: 'Vida Máxima'}[key] || key.replace(/([A-Z])/g, ' $1') }}</p>
                                         <p class="font-pixel text-lg" :class="{'text-pink-400': key === 'prestigeBonus', 'text-yellow-400': key === 'achievementBonus', 'text-cyan-400': !['prestigeBonus', 'achievementBonus'].includes(key)}">
                                             {{ (key.includes('Bonus') || key.includes('Multiplier') ? `+${formatNumber((value - 1) * 100, 2)}%` : (key.includes('Chance') ? `${formatNumber(value * 100, 2)}%` : formatNumber(value))) }}
                                         </p>
@@ -199,17 +215,16 @@
                     </div>
                     <!-- Equipamentos -->
                     <div v-if="activeView === 'equipment'">
-                        <div v-for="(items, type) in equipmentData" :key="type" class="mb-6">
+                        <div v-for="(items, type) in gameState.inventory" :key="type" class="mb-6">
                             <h3 class="font-pixel text-cyan-400 capitalize">{{ {arma: 'Armas', armadura: 'Armaduras', implante: 'Implantes'}[type] || type }}</h3>
                             <div class="space-y-2 mt-2">
-                                <div v-for="item in items" :key="item.id" class="flex items-center justify-between bg-gray-800 p-3 rounded-lg">
+                                <div v-for="item in items" :key="item.uniqueId" class="flex items-center justify-between bg-gray-800 p-3 rounded-lg">
                                     <div>
-                                        <p class="font-bold"><i :class="['fa-solid', item.icon, 'mr-2']"></i>{{ item.name }}</p>
+                                        <p class="font-bold" :style="{color: item.rarityColor}"><i :class="['fa-solid', item.icon, 'mr-2']"></i>{{ item.name }}</p>
                                         <p class="text-sm text-gray-400">+{{ item.bonus.value }} {{ {attack: 'Ataque', defense: 'Defesa', forca: 'Força', destreza: 'Destreza'}[item.bonus.stat] || item.bonus.stat }}</p>
                                     </div>
-                                    <button v-if="gameState.equipment[type] === item.id" class="font-pixel text-xs py-2 px-3 rounded-md bg-gray-600" disabled>Equipado</button>
-                                    <button v-else-if="gameState.inventory[type] && gameState.inventory[type].includes(item.id)" @click="equipItem(type, item.id)" class="font-pixel text-xs py-2 px-3 rounded-md bg-yellow-500 text-black hover:bg-yellow-400 transition">Equipar</button>
-                                    <button v-else @click="buyEquipment(type, item.id)" :disabled="gameState.creds < item.cost" class="font-pixel text-xs py-2 px-3 rounded-md bg-cyan-400 text-black hover:bg-cyan-300 transition disabled:bg-gray-700 disabled:text-gray-400">{{ formatNumber(item.cost) }} Creds</button>
+                                    <button v-if="gameState.equipment[type] === item.uniqueId" class="font-pixel text-xs py-2 px-3 rounded-md bg-gray-600" disabled>Equipado</button>
+                                    <button v-else @click="equipItem(type, item.uniqueId)" class="font-pixel text-xs py-2 px-3 rounded-md bg-yellow-500 text-black hover:bg-yellow-400 transition">Equipar</button>
                                 </div>
                             </div>
                         </div>
@@ -234,9 +249,30 @@
                         <div class="flex items-center justify-between bg-gray-800 p-3 rounded-lg">
                             <div>
                                 <p class="font-bold capitalize">Aprimorar Velocidade de Combate</p>
-                                <p class="text-sm text-gray-400">Velocidade atual: +{{ formatNumber(gameState.combatSpeedLevel) }}</p>
+                                <p class="text-sm text-gray-400">Velocidade atual: Nível {{ formatNumber(gameState.combatSpeedLevel) }}</p>
                             </div>
                             <button @click="upgradeCombatSpeed" :disabled="gameState.creds < getCombatSpeedUpgradeCost" class="font-pixel text-sm py-2 px-4 rounded-md bg-cyan-400 text-black hover:bg-cyan-300 transition disabled:bg-gray-700 disabled:text-gray-400">{{ formatNumber(getCombatSpeedUpgradeCost) }} Creds</button>
+                        </div>
+                        <div class="flex items-center justify-between bg-gray-800 p-3 rounded-lg">
+                            <div>
+                                <p class="font-bold capitalize">Aprimorar Chance Crítica</p>
+                                <p class="text-sm text-gray-400">Chance atual: {{ formatNumber(computedStats.critChance * 100, 2) }}%</p>
+                            </div>
+                            <button @click="upgradeCritChance" :disabled="gameState.creds < getCritChanceUpgradeCost" class="font-pixel text-sm py-2 px-4 rounded-md bg-cyan-400 text-black hover:bg-cyan-300 transition disabled:bg-gray-700 disabled:text-gray-400">{{ formatNumber(getCritChanceUpgradeCost) }} Creds</button>
+                        </div>
+                        <div class="flex items-center justify-between bg-gray-800 p-3 rounded-lg">
+                            <div>
+                                <p class="font-bold capitalize">Aprimorar Dano Crítico</p>
+                                <p class="text-sm text-gray-400">Dano atual: +{{ formatNumber((computedStats.critDamageMultiplier - 1) * 100) }}%</p>
+                            </div>
+                            <button @click="upgradeCritDamage" :disabled="gameState.creds < getCritDamageUpgradeCost" class="font-pixel text-sm py-2 px-4 rounded-md bg-cyan-400 text-black hover:bg-cyan-300 transition disabled:bg-gray-700 disabled:text-gray-400">{{ formatNumber(getCritDamageUpgradeCost) }} Creds</button>
+                        </div>
+                         <div class="flex items-center justify-between bg-gray-800 p-3 rounded-lg">
+                            <div>
+                                <p class="font-bold capitalize">Aprimorar Duração do Combo</p>
+                                <p class="text-sm text-gray-400">Rodadas de Bônus: {{ formatNumber(computedStats.comboRounds) }}</p>
+                            </div>
+                            <button @click="upgradeComboDuration" :disabled="gameState.creds < getComboDurationUpgradeCost" class="font-pixel text-sm py-2 px-4 rounded-md bg-cyan-400 text-black hover:bg-cyan-300 transition disabled:bg-gray-700 disabled:text-gray-400">{{ formatNumber(getComboDurationUpgradeCost) }} Creds</button>
                         </div>
                     </div>
                     <!-- Habilidades -->
@@ -366,6 +402,11 @@
                 };
                 const contractsData = [ { id: 'c1', name: 'Exterminar Drones', description: 'Derrube Drones de Segurança para coletar seus componentes.', type: 'kill', target: 'e1', targetCount: 50, minLevel: 1, reward: { type: 'creds', value: 2500 } }, { id: 'c2', name: 'Limpeza Corporativa', description: 'Elimine os Guardas Corporativos que patrulham a área.', type: 'kill', target: 'e2', targetCount: 25, minLevel: 5, reward: { type: 'creds', value: 5000 } }, { id: 'c3', name: 'Primeiros Passos', description: 'Acumule uma pequena fortuna para provar seu valor.', type: 'collect_creds', targetCount: 10000, minLevel: 1, reward: { type: 'skillPoints', value: 1 } }, { id: 'c4', name: 'Caça ao Assassino', description: 'Neutralize o perigoso Cyborg Assassino.', type: 'kill', target: 'e5', targetCount: 10, minLevel: 30, reward: { type: 'skillPoints', value: 5 } } ];
                 const achievementsData = [ { id: 'ach1', name: 'Clicador Iniciante', description: 'Clique 100 vezes.', type: 'clicks', target: 100, bonus: { stat: 'globalMultiplier', value: 0.01, description: '+1% de ganhos de Creds' } }, { id: 'ach2', name: 'Mercenário Novato', description: 'Alcance o nível 10.', type: 'level', target: 10, bonus: { stat: 'globalMultiplier', value: 0.02, description: '+2% de ganhos de XP' } }, { id: 'ach3', name: 'Pequeno Investidor', description: 'Acumule 10.000 Creds.', type: 'totalCreds', target: 10000, bonus: { stat: 'globalMultiplier', value: 0.02, description: '+2% de ganhos de Creds' } }, { id: 'ach4', name: 'Veterano das Ruas', description: 'Alcance o nível 25.', type: 'level', target: 25, bonus: { stat: 'xpMultiplier', value: 0.05, description: '+5% de ganhos de XP' } }, ];
+                const eventData = [
+                    { id: 'evt1', name: 'Surto de Dados', description: 'Ganhos de XP +50%!', icon: 'fa-brain', duration: 90, effect: { stat: 'xpMultiplier', value: 0.5 } },
+                    { id: 'evt2', name: 'Mercado em Alta', description: 'Ganhos de Creds +50%!', icon: 'fa-chart-line', duration: 90, effect: { stat: 'credsMultiplier', value: 0.5 } },
+                    { id: 'evt3', name: 'Adrenalina de Combate', description: 'Velocidade de Combate +25%!', icon: 'fa-bolt', duration: 90, effect: { stat: 'combatSpeed', value: 0.25 } }
+                ];
 
                 // --- GAME STATE (Reactive) ---
                 const defaultGameState = () => ({
@@ -385,7 +426,17 @@
                     stats: { totalClicks: 0, totalCreds: 0, enemiesDefeated: {} },
                     completedAchievementIds: [],
                     combatSpeedLevel: 1,
-                    currentEnemyId: 'e1'
+                    critChanceLevel: 1,
+                    critDamageLevel: 1,
+                    comboDurationLevel: 1,
+                    currentEnemyId: 'e1',
+                    activeEventId: null,
+                    eventEndTime: 0,
+                    comboCount: 0,
+                    lastClickTimestamp: 0,
+                    comboBonusActive: false,
+                    comboBonusRoundsLeft: 0,
+                    maxComboCount: 0,
                 });
                 const gameState = reactive(defaultGameState());
 
@@ -417,10 +468,19 @@
                 const playerDefeatedTimer = ref(0);
                 
                 // --- COMPUTED PROPERTIES ---
+                const activeEvent = computed(() => eventData.find(e => e.id === gameState.activeEventId));
+                const activeEventTimer = computed(() => {
+                    if (!activeEvent.value) return 0;
+                    return Math.max(0, dayjs(gameState.eventEndTime).diff(currentTime.value, 'second'));
+                });
+
                 const currentViewName = computed(() => (shopTabs.find(t => t.id === activeView.value) || {name: 'Seleção de Alvo'}).name);
                 const currentViewIcon = computed(() => (shopTabs.find(t => t.id === activeView.value) || {icon: 'fa-crosshairs'}).icon);
                 
                 const getCombatSpeedUpgradeCost = computed(() => Math.floor(50 * Math.pow(1.5, gameState.combatSpeedLevel)));
+                const getCritChanceUpgradeCost = computed(() => Math.floor(100 * Math.pow(1.8, gameState.critChanceLevel)));
+                const getCritDamageUpgradeCost = computed(() => Math.floor(150 * Math.pow(1.7, gameState.critDamageLevel)));
+                const getComboDurationUpgradeCost = computed(() => Math.floor(200 * Math.pow(1.6, gameState.comboDurationLevel)));
 
                 const achievementBonus = computed(() => {
                     const bonuses = { globalMultiplier: 1, xpMultiplier: 1 };
@@ -464,16 +524,25 @@
                         const agentInfo = agentsData.find(a => a.id === agentId);
                         if (agentInfo) totalCps += gameState.agents[agentId] * agentInfo.cps;
                     }
+
+                    let eventBonus = { xpMultiplier: 1, credsMultiplier: 1, combatSpeed: 1 };
+                    if (activeEvent.value) {
+                        eventBonus[activeEvent.value.effect.stat] = 1 + activeEvent.value.effect.value;
+                    }
+
                     return {
                         attack: totalAttack,
                         defense: totalDefense,
                         maxHealth: 100 + (base.vigor - 1) * 20,
                         credsPerSecond: totalCps * achBonus.globalMultiplier * passiveBonuses.cpsMultiplier,
-                        xpMultiplier: passiveBonuses.xpMultiplier * achBonus.xpMultiplier,
-                        critCredChance: passiveBonuses.critCredChance,
+                        xpMultiplier: passiveBonuses.xpMultiplier * achBonus.xpMultiplier * eventBonus.xpMultiplier,
+                        credsMultiplier: eventBonus.credsMultiplier,
+                        critChance: 0.05 + (gameState.critChanceLevel - 1) * 0.005, // 5% base + 0.5% per level
+                        critDamageMultiplier: 1.5 + (gameState.critDamageLevel - 1) * 0.1, // 150% base + 10% per level
                         prestigeBonus,
                         achievementBonus: achBonus.globalMultiplier,
-                        combatSpeed: (1 + (gameState.combatSpeedLevel - 1) * 0.1) // 10% faster per level
+                        combatSpeed: ((1 + (gameState.combatSpeedLevel - 1) * 0.1) * eventBonus.combatSpeed),
+                        comboRounds: 5 + (gameState.comboDurationLevel - 1)
                     };
                 });
 
@@ -550,7 +619,10 @@
                     }
                     return Math.floor(num).toLocaleString('pt-BR', options);
                 }
-                const getItem = (type, id) => equipmentData[type]?.find(i => i.id === id) || null;
+                const getItem = (type, id) => {
+                    if (!id) return null;
+                    return gameState.inventory[type].find(i => i.uniqueId === id);
+                };
                 
                 const getAgentCost = (id) => {
                     const agent = agentsData.find(a => a.id === id);
@@ -579,8 +651,24 @@
 
                 const manualClick = () => {
                     if (isPlayerDefeated.value) return;
+                    const now = Date.now();
+                    if (now - gameState.lastClickTimestamp < 2000) { // 2 second combo window
+                        gameState.comboCount = Math.min(10, gameState.comboCount + 1);
+                    } else {
+                        gameState.comboCount = 1;
+                    }
+                    
+                    if(gameState.comboCount >= 10 && !gameState.comboBonusActive) {
+                        gameState.comboBonusActive = true;
+                        gameState.comboBonusRoundsLeft = computedStats.value.comboRounds;
+                        gameState.maxComboCount = gameState.comboCount;
+                    }
+
+                    gameState.lastClickTimestamp = now;
+                    
                     gameState.stats.totalClicks++;
-                    combatProgress.value = Math.min(100, combatProgress.value + 5); // Each click adds 5% progress
+                    const comboBonus = 1 + (gameState.comboCount * 0.01);
+                    combatProgress.value = Math.min(100, combatProgress.value + (5 * comboBonus));
                 };
 
                 const resolveCombat = () => {
@@ -589,10 +677,22 @@
                     const rect = actionPanelRef.value.getBoundingClientRect();
                     const position = { x: rect.width / 2, y: rect.height / 2 };
 
-                    // Win condition: Player's attack is higher than enemy's defense
+                    let comboMultiplier = 1;
+                    if (gameState.comboBonusActive) {
+                        comboMultiplier = 1 + (gameState.maxComboCount * 0.05); // 5% bonus per combo point
+                        gameState.comboBonusRoundsLeft--;
+                        if (gameState.comboBonusRoundsLeft <= 0) {
+                            gameState.comboBonusActive = false;
+                            gameState.maxComboCount = 0;
+                        }
+                    }
+
                     if (playerStats.attack > enemy.defense) {
-                        const xpGained = enemy.reward.xp * playerStats.xpMultiplier * playerStats.prestigeBonus;
-                        const credsGained = enemy.reward.creds * playerStats.prestigeBonus * (Math.random() < playerStats.critCredChance ? 2 : 1);
+                        const isCritical = Math.random() < playerStats.critChance;
+                        const critMultiplier = isCritical ? playerStats.critDamageMultiplier : 1;
+                        
+                        const xpGained = enemy.reward.xp * playerStats.xpMultiplier * playerStats.prestigeBonus * critMultiplier * comboMultiplier;
+                        let credsGained = enemy.reward.creds * playerStats.prestigeBonus * playerStats.credsMultiplier * critMultiplier * comboMultiplier;
                         
                         gameState.xp += xpGained;
                         addCreds(credsGained);
@@ -602,11 +702,14 @@
                         }
                         gameState.stats.enemiesDefeated[enemy.id]++;
 
+                        if (isCritical) {
+                            showFloatingText('CRÍTICO!', 'var(--crit-color)', { ...position, y: position.y - 60 });
+                        }
                         showFloatingText(`+${formatNumber(xpGained)} XP`, 'var(--xp-color)', { ...position, y: position.y - 30 });
                         showFloatingText(`+${formatNumber(credsGained)} Creds`, 'var(--gold-color)', position);
 
                         if (gameState.xp >= gameState.xpToNextLevel) levelUp();
-                    } else { // Loss condition
+                    } else {
                         const damageTaken = Math.max(1, enemy.attack - playerStats.defense);
                         gameState.health = Math.max(0, gameState.health - damageTaken);
                         showFloatingText(`-${formatNumber(damageTaken)} Dano`, 'var(--health-color)', position);
@@ -625,6 +728,7 @@
                         }
                     }
                     combatProgress.value = 0;
+                    if (!gameState.comboBonusActive) gameState.comboCount = 0;
                     checkAchievements();
                 };
                 
@@ -650,18 +754,12 @@
                 };
                 
                 const buyEquipment = (type, id) => {
-                    const item = getItem(type, id);
-                    if (!item || gameState.creds < item.cost) return;
-                    if (!gameState.inventory[type]) gameState.inventory[type] = [];
-                    if (!gameState.inventory[type].includes(id)) {
-                        gameState.creds -= item.cost;
-                        gameState.inventory[type].push(id);
-                    }
+                    // This function is now deprecated in favor of loot drops
                 };
                 
-                const equipItem = (type, id) => {
-                    if (gameState.inventory[type] && gameState.inventory[type].includes(id)) {
-                        gameState.equipment[type] = id;
+                const equipItem = (type, uniqueId) => {
+                    if (gameState.inventory[type] && gameState.inventory[type].find(i => i.uniqueId === uniqueId)) {
+                        gameState.equipment[type] = uniqueId;
                     }
                 };
 
@@ -686,6 +784,30 @@
                     if (gameState.creds >= cost) {
                         gameState.creds -= cost;
                         gameState.combatSpeedLevel++;
+                    }
+                };
+
+                const upgradeCritChance = () => {
+                    const cost = getCritChanceUpgradeCost.value;
+                    if (gameState.creds >= cost) {
+                        gameState.creds -= cost;
+                        gameState.critChanceLevel++;
+                    }
+                };
+
+                const upgradeCritDamage = () => {
+                    const cost = getCritDamageUpgradeCost.value;
+                    if (gameState.creds >= cost) {
+                        gameState.creds -= cost;
+                        gameState.critDamageLevel++;
+                    }
+                };
+
+                const upgradeComboDuration = () => {
+                    const cost = getComboDurationUpgradeCost.value;
+                    if (gameState.creds >= cost) {
+                        gameState.creds -= cost;
+                        gameState.comboDurationLevel++;
                     }
                 };
                 
@@ -863,7 +985,15 @@
                     closeView();
                 };
 
-                let gameLoopInterval, saveInterval, cooldownInterval;
+                const triggerRandomEvent = () => {
+                    if (activeEvent.value) return;
+                    const randomIndex = Math.floor(Math.random() * eventData.length);
+                    const newEvent = eventData[randomIndex];
+                    gameState.activeEventId = newEvent.id;
+                    gameState.eventEndTime = dayjs().add(newEvent.duration, 'second').valueOf();
+                };
+
+                let gameLoopInterval, saveInterval, cooldownInterval, eventInterval;
 
                 onMounted(() => {
                     loadGame();
@@ -874,6 +1004,9 @@
                         addCreds((computedStats.value.credsPerSecond * computedStats.value.prestigeBonus) / (1000 / GAME_TICK_RATE));
                         
                         // Combat Cycle Progress
+                        if (Date.now() - gameState.lastClickTimestamp > 2000) {
+                            gameState.comboCount = 0;
+                        }
                         combatProgress.value += (100 / (5000 / GAME_TICK_RATE)) * computedStats.value.combatSpeed; // 5 seconds base cycle
                         if (combatProgress.value >= 100) {
                             resolveCombat();
@@ -886,7 +1019,13 @@
                     
                     cooldownInterval = setInterval(() => {
                         currentTime.value = dayjs().valueOf();
+                        if (activeEvent.value && currentTime.value > gameState.eventEndTime) {
+                            gameState.activeEventId = null;
+                            gameState.eventEndTime = 0;
+                        }
                     }, 1000);
+
+                    eventInterval = setInterval(triggerRandomEvent, 5 * 60 * 1000); // Chance for event every 5 minutes
                 });
 
                 watch(() => gameState.attributes.vigor, () => {
@@ -897,6 +1036,7 @@
                     clearInterval(gameLoopInterval);
                     clearInterval(saveInterval);
                     clearInterval(cooldownInterval);
+                    clearInterval(eventInterval);
                 });
 
                 return {
@@ -906,17 +1046,19 @@
                     showOfflineModal, offlineGains,
                     showConfirmModal, confirmTitle, confirmMessage,
                     combatProgress, isPlayerDefeated, playerDefeatedTimer,
+                    activeEvent, activeEventTimer,
                     // Computed
                     computedStats, currentEnemy, prestigePointsToGain, activeSkills,
                     skillTree, activeContract, contractProgress, isContractComplete, availableContracts,
                     isAchievementCompleted, currentViewName, currentViewIcon, getCombatSpeedUpgradeCost,
+                    getCritChanceUpgradeCost, getCritDamageUpgradeCost, getComboDurationUpgradeCost,
                     // Methods
                     formatNumber, getItem, getAgentCost, getTrainCost,
                     manualClick, buyEquipment, equipItem, buyAgent, trainAttribute, buySkill, activateSkill,
                     acceptContract, cancelContract, claimReward,
                     saveGame, resetGame, prestigeReset, selectEnemy,
                     askForConfirmation, handleConfirm, cancelConfirm,
-                    toggleMenu, openView, closeView, upgradeCombatSpeed,
+                    toggleMenu, openView, closeView, upgradeCombatSpeed, upgradeCritChance, upgradeCritDamage, upgradeComboDuration,
                     PRESTIGE_LEVEL_REQ,
                     enemyData
                 };
@@ -928,3 +1070,5 @@
     </script>
 </body>
 </html>
+" in the canvas.
+I want to implement the loot and rare items id
