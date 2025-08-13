@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Cyberpunk RPG Clicker - Edição Vue</title>
+    <title>Cyberpunk Netrunner Clicker - Edição Vue</title>
     
     <!-- Vue.js -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
@@ -41,8 +41,9 @@
             --skill-color: #39ff14;
             --prestige-color: #f77fbe;
             --achievement-color: #ffdf00;
-            --health-color: #ff4d4d;
+            --trace-color: #ff4d4d;
             --crit-color: #ff9900;
+            /* Cores de Raridade */
             --rarity-comum: #ffffff;
             --rarity-incomum: #1eff00;
             --rarity-raro: #0070dd;
@@ -83,11 +84,11 @@
             <div class="max-w-7xl mx-auto flex justify-between items-center">
                 <!-- Recursos -->
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-1 font-pixel text-xs sm:text-sm">
-                    <p class="text-yellow-400" title="Creds"><i class="fas fa-coins"></i> {{ formatNumber(gameState.creds) }}</p>
-                    <p class="text-fuchsia-400" title="Experiência"><i class="fas fa-star"></i> {{ formatNumber(gameState.xp) }}</p>
-                    <div class="flex items-center gap-2 text-red-500" title="Vida">
-                        <i class="fas fa-heart"></i>
-                        <span>{{ formatNumber(gameState.health) }} / {{ formatNumber(computedStats.maxHealth) }}</span>
+                    <p class="text-yellow-400" title="DataCreds"><i class="fas fa-coins"></i> {{ formatNumber(gameState.creds) }}</p>
+                    <p class="text-fuchsia-400" title="Reputação"><i class="fas fa-star"></i> {{ formatNumber(gameState.rep) }}</p>
+                    <div class="flex items-center gap-2 text-red-500" title="Nível de Rastreamento">
+                        <i class="fas fa-user-secret"></i>
+                        <span>{{ formatNumber(gameState.traceLevel) }} / {{ formatNumber(computedStats.maxTrace) }}</span>
                     </div>
                 </div>
                 <!-- Habilidades Ativas -->
@@ -111,21 +112,21 @@
         <!-- Área de Ação Principal -->
         <main class="flex-grow flex items-center justify-center p-4">
             <div ref="actionPanelRef" class="relative bg-[#1a1a1a] p-6 rounded-xl border border-gray-700 text-center flex flex-col items-center justify-center w-full max-w-2xl min-h-[300px] sm:min-h-[400px]">
-                <div v-if="isPlayerDefeated" class="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-10 animate__animated animate__fadeIn">
-                    <h2 class="font-pixel text-3xl text-red-500">VOCÊ FOI DERROTADO</h2>
-                    <p class="text-lg mt-2">Recuperando em {{ playerDefeatedTimer }}s...</p>
+                <div v-if="isPlayerDisconnected" class="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-10 animate__animated animate__fadeIn">
+                    <h2 class="font-pixel text-3xl text-red-500">RASTREADO E DESCONECTADO</h2>
+                    <p class="text-lg mt-2">Reconectando em {{ playerDisconnectedTimer }}s...</p>
                 </div>
-                <h2 class="font-pixel text-xl sm:text-2xl mb-2">Alvo: {{ currentEnemy.name }}</h2>
-                <p class="text-sm font-pixel mb-4">ATK: {{formatNumber(currentEnemy.attack)}} / DEF: {{formatNumber(currentEnemy.defense)}}</p>
+                <h2 class="font-pixel text-xl sm:text-2xl mb-2">Alvo: {{ currentTargetSystem.name }}</h2>
+                <p class="text-sm font-pixel mb-4">Processamento: {{formatNumber(currentTargetSystem.processingPower)}} / Criptografia: {{formatNumber(currentTargetSystem.encryption)}}</p>
                 
-                <button @click="manualClick" :disabled="isPlayerDefeated" class="transition-transform active:scale-95 disabled:opacity-50">
-                    <i :class="['fa-solid', currentEnemy.icon, 'text-7xl sm:text-8xl md:text-9xl']" :style="{ color: currentEnemy.color, filter: `drop-shadow(0 0 15px ${currentEnemy.color})` }"></i>
+                <button @click="manualClick" :disabled="isPlayerDisconnected" class="transition-transform active:scale-95 disabled:opacity-50">
+                    <i :class="['fa-solid', currentTargetSystem.icon, 'text-7xl sm:text-8xl md:text-9xl']" :style="{ color: currentTargetSystem.color, filter: `drop-shadow(0 0 15px ${currentTargetSystem.color})` }"></i>
                 </button>
 
                 <div class="w-3/4 mt-4 text-center">
-                    <p class="font-pixel text-sm text-cyan-400 mb-2">Ciclo de Combate</p>
+                    <p class="font-pixel text-sm text-cyan-400 mb-2">Ciclo de Invasão</p>
                     <div class="w-full bg-gray-800 rounded-full h-5 overflow-hidden border-2 border-cyan-500/50">
-                        <div class="bg-cyan-400 h-full rounded-full transition-all duration-100 ease-linear" :style="{ width: `${combatProgress}%` }"></div>
+                        <div class="bg-cyan-400 h-full rounded-full transition-all duration-100 ease-linear" :style="{ width: `${hackProgress}%` }"></div>
                     </div>
                 </div>
                 
@@ -134,10 +135,10 @@
                     <span v-else>COMBO x{{ gameState.comboCount }}</span>
                 </div>
 
-                <button @click="openView('enemySelection')" class="font-pixel text-xs py-2 px-4 mt-4 rounded-md bg-gray-600 text-white hover:bg-gray-500 transition">Mudar Alvo</button>
+                <button @click="openView('systemSelection')" class="font-pixel text-xs py-2 px-4 mt-4 rounded-md bg-gray-600 text-white hover:bg-gray-500 transition">Mudar Alvo</button>
                 
                 <div v-for="text in floatingTexts" :key="text.id" class="floating-text absolute font-pixel text-2xl pointer-events-none" :style="{ top: text.y + 'px', left: text.x + 'px', color: text.color }">
-                    {{ text.content }}
+                    <i v-if="text.icon" :class="['fa-solid', text.icon, 'mr-2']"></i>{{ text.content }}
                 </div>
             </div>
         </main>
@@ -146,7 +147,7 @@
         <div class="fixed bottom-6 right-6 z-40">
             <transition name="menu-fade">
                 <div v-if="isMenuOpen" class="flex flex-col items-center gap-3 mb-3">
-                    <button v-for="tab in shopTabs" :key="tab.id" @click="openView(tab.id)" class="w-14 h-14 rounded-full bg-cyan-400 text-black flex items-center justify-center shadow-lg hover:bg-cyan-300 transition-transform hover:scale-110" :title="tab.name">
+                    <button v-for="tab in menuTabs" :key="tab.id" @click="openView(tab.id)" class="w-14 h-14 rounded-full bg-cyan-400 text-black flex items-center justify-center shadow-lg hover:bg-cyan-300 transition-transform hover:scale-110" :title="tab.name">
                         <i :class="['fa-solid', tab.icon, 'text-2xl']"></i>
                     </button>
                 </div>
@@ -166,71 +167,84 @@
                 </div>
                 <!-- Conteúdo Rolável -->
                 <div class="p-6 flex-grow overflow-y-auto fullscreen-content space-y-6">
-                    <!-- Seleção de Inimigo -->
-                    <div v-if="activeView === 'enemySelection'">
-                        <div v-for="enemy in enemyData" :key="enemy.id" class="flex items-center justify-between bg-gray-800 p-3 rounded-lg mb-2">
+                    <!-- Seleção de Sistema -->
+                    <div v-if="activeView === 'systemSelection'">
+                        <div v-for="system in systemData" :key="system.id" class="flex items-center justify-between bg-gray-800 p-3 rounded-lg mb-2">
                             <div>
-                                <p class="font-bold"><i :class="['fa-solid', enemy.icon, 'mr-2']" :style="{color: enemy.color}"></i>{{ enemy.name }} (Nível {{ enemy.level }})</p>
-                                <p class="text-sm text-gray-400">ATK: {{ formatNumber(enemy.attack) }} | DEF: {{ formatNumber(enemy.defense) }}</p>
+                                <p class="font-bold"><i :class="['fa-solid', system.icon, 'mr-2']" :style="{color: system.color}"></i>{{ system.name }} (Nível {{ system.level }})</p>
+                                <p class="text-sm text-gray-400">Processamento: {{ formatNumber(system.processingPower) }} | Criptografia: {{ formatNumber(system.encryption) }}</p>
                             </div>
-                            <button @click="selectEnemy(enemy.id)" :disabled="gameState.currentEnemyId === enemy.id" class="font-pixel text-sm py-2 px-4 rounded-md bg-cyan-400 text-black hover:bg-cyan-300 transition disabled:bg-gray-700 disabled:text-gray-400">
-                                {{ gameState.currentEnemyId === enemy.id ? 'Lutando' : 'Lutar' }}
+                            <button @click="selectSystem(system.id)" :disabled="gameState.currentTargetSystemId === system.id" class="font-pixel text-sm py-2 px-4 rounded-md bg-cyan-400 text-black hover:bg-cyan-300 transition disabled:bg-gray-700 disabled:text-gray-400">
+                                {{ gameState.currentTargetSystemId === system.id ? 'Invadindo' : 'Invadir' }}
                             </button>
                         </div>
                     </div>
-                    <!-- Personagem -->
-                    <div v-if="activeView === 'character'">
+                    <!-- Netrunner -->
+                    <div v-if="activeView === 'netrunner'">
                          <div class="bg-[#1a1a1a] p-6 rounded-xl border border-gray-700 shadow-lg shadow-cyan-500/10">
                             <div class="text-center mb-4">
-                                <h1 class="font-pixel text-2xl text-white">Mercenário</h1>
+                                <h1 class="font-pixel text-2xl text-white">Netrunner</h1>
                                 <h2 class="font-pixel text-cyan-400">Nível {{ gameState.level }}</h2>
                             </div>
 
                             <div class="flex justify-center gap-4 mb-4 p-2 bg-gray-800 rounded-lg">
-                                <div v-for="(itemId, type) in gameState.equipment" :key="type" class="w-16 h-16 bg-black/50 rounded-lg flex items-center justify-center text-4xl text-gray-500" :title="getItem(type, itemId)?.name || 'Vazio'">
-                                    <i v-if="getItem(type, itemId)" :class="['fa-solid', getItem(type, itemId).icon, 'text-cyan-400']"></i>
+                                <div v-for="(itemId, type) in gameState.equipment" :key="type" class="w-16 h-16 bg-black/50 rounded-lg flex items-center justify-center text-4xl text-gray-500 border-2" :style="{borderColor: getItem(type, itemId)?.rarityColor || 'transparent'}" :title="getItem(type, itemId)?.name || 'Vazio'">
+                                    <i v-if="getItem(type, itemId)" :class="['fa-solid', getItem(type, itemId).icon]" :style="{color: getItem(type, itemId).rarityColor}"></i>
                                     <i v-else class="fa-solid fa-question"></i>
                                 </div>
                             </div>
 
                             <div>
                                 <div class="bg-gray-800 rounded-full h-4 overflow-hidden">
-                                    <div class="bg-fuchsia-500 h-4 transition-all duration-300" :style="{ width: `${(gameState.xp / gameState.xpToNextLevel) * 100}%` }"></div>
+                                    <div class="bg-fuchsia-500 h-4 transition-all duration-300" :style="{ width: `${(gameState.rep / gameState.repToNextLevel) * 100}%` }"></div>
                                 </div>
-                                <p class="text-center text-sm mt-1 text-gray-400">{{ formatNumber(gameState.xp) }} / {{ formatNumber(gameState.xpToNextLevel) }} XP</p>
+                                <p class="text-center text-sm mt-1 text-gray-400">{{ formatNumber(gameState.rep) }} / {{ formatNumber(gameState.repToNextLevel) }} REP</p>
                             </div>
 
                             <div v-for="(items, title) in { 'Atributos': gameState.attributes, 'Estatísticas': computedStats }" :key="title" class="mt-6">
                                 <h3 class="font-pixel text-cyan-400 text-sm mb-2">{{ title }}</h3>
                                 <div class="grid grid-cols-2 gap-2">
                                     <div v-for="(value, key) in items" :key="key" class="bg-gray-800 p-2 rounded-lg text-center">
-                                        <p class="text-xs capitalize text-gray-400">{{ {attack: 'Ataque', defense: 'Defesa', credsPerClick: 'Creds / Clique', credsPerSecond: 'Creds / Seg', xpMultiplier: 'Bônus de XP', critChance: 'Chance Crítica', critDamageMultiplier: 'Dano Crítico', prestigeBonus: 'Bônus de Prestígio', achievementBonus: 'Bônus de Conquista', maxHealth: 'Vida Máxima'}[key] || key.replace(/([A-Z])/g, ' $1') }}</p>
+                                        <p class="text-xs capitalize text-gray-400">{{ {invasionPower: 'Poder de Invasão', security: 'Segurança', credsPerSecond: 'Creds / Seg', repMultiplier: 'Bônus de REP', critChance: 'Chance Crítica', critMultiplier: 'Multiplicador Crítico', prestigeBonus: 'Bônus de Prestígio', achievementBonus: 'Bônus de Conquista', maxTrace: 'Rastreamento Máx.', lootChanceBonus: 'Chance de Loot', traceResist: 'Resist. Rastreamento'}[key] || key.replace(/([A-Z])/g, ' $1') }}</p>
                                         <p class="font-pixel text-lg" :class="{'text-pink-400': key === 'prestigeBonus', 'text-yellow-400': key === 'achievementBonus', 'text-cyan-400': !['prestigeBonus', 'achievementBonus'].includes(key)}">
-                                            {{ (key.includes('Bonus') || key.includes('Multiplier') ? `+${formatNumber((value - 1) * 100, 2)}%` : (key.includes('Chance') ? `${formatNumber(value * 100, 2)}%` : formatNumber(value))) }}
+                                            {{ (key.includes('Bonus') || key.includes('Multiplier') || key.includes('critMultiplier') ? `+${formatNumber((value - 1) * 100, 2)}%` : (key.includes('Chance') ? `${formatNumber(value * 100, 2)}%` : (key === 'credsPerSecond' ? formatNumber(value, 2) : formatNumber(value)))) }}
                                         </p>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <!-- Equipamentos -->
-                    <div v-if="activeView === 'equipment'">
-                        <div v-for="(items, type) in gameState.inventory" :key="type" class="mb-6">
-                            <h3 class="font-pixel text-cyan-400 capitalize">{{ {arma: 'Armas', armadura: 'Armaduras', implante: 'Implantes'}[type] || type }}</h3>
+                    <!-- Hardware -->
+                    <div v-if="activeView === 'hardware'">
+                        <div v-for="(items, type) in sortedInventory" :key="type" class="mb-6">
+                            <div class="flex justify-between items-center mb-3">
+                                <h3 class="font-pixel text-cyan-400 capitalize">{{ {deck: 'Decks de Invasão', software: 'Softwares', implante: 'Implantes'}[type] || type }}</h3>
+                                <div class="flex gap-2 items-center">
+                                     <button @click="askForConfirmation('Vender Tudo', `Vender todos os itens de ${type} não equipados?`, () => sellAllUnequipped(type))" class="font-pixel text-xs py-1 px-2 rounded-md bg-red-800 text-white hover:bg-red-700 transition">Vender Todos</button>
+                                    <div class="text-xs font-pixel">Ordenar:</div>
+                                    <button @click="setSort(type, 'rarity')" class="font-pixel text-xs py-1 px-2 rounded-md" :class="inventorySort[type] === 'rarity' ? 'bg-cyan-500 text-black' : 'bg-gray-600'">Raridade</button>
+                                    <button @click="setSort(type, 'power')" class="font-pixel text-xs py-1 px-2 rounded-md" :class="inventorySort[type] === 'power' ? 'bg-cyan-500 text-black' : 'bg-gray-600'">Poder</button>
+                                </div>
+                            </div>
                             <div class="space-y-2 mt-2">
-                                <div v-for="item in items" :key="item.uniqueId" class="flex items-center justify-between bg-gray-800 p-3 rounded-lg">
+                                <div v-if="!items.length" class="text-center text-gray-500 p-4 bg-gray-800 rounded-lg">Inventário Vazio</div>
+                                <div v-for="item in items" :key="item.uniqueId" class="flex items-center justify-between bg-gray-800 p-3 rounded-lg border-l-4" :style="{borderLeftColor: item.rarityColor}">
                                     <div>
                                         <p class="font-bold" :style="{color: item.rarityColor}"><i :class="['fa-solid', item.icon, 'mr-2']"></i>{{ item.name }}</p>
-                                        <p class="text-sm text-gray-400">+{{ item.bonus.value }} {{ {attack: 'Ataque', defense: 'Defesa', forca: 'Força', destreza: 'Destreza'}[item.bonus.stat] || item.bonus.stat }}</p>
+                                        <p class="text-sm text-gray-400">+{{ formatNumber(item.bonus.value) }} {{ {processamento: 'Processamento', ofuscacao: 'Ofuscação', agilidade: 'Agilidade'}[item.bonus.stat] || item.bonus.stat }}</p>
+                                        <p v-if="item.specialEffect" class="text-xs text-cyan-400 mt-1"><i class="fa-solid fa-star-of-life mr-1"></i>{{ item.specialEffect.description }}</p>
                                     </div>
-                                    <button v-if="gameState.equipment[type] === item.uniqueId" class="font-pixel text-xs py-2 px-3 rounded-md bg-gray-600" disabled>Equipado</button>
-                                    <button v-else @click="equipItem(type, item.uniqueId)" class="font-pixel text-xs py-2 px-3 rounded-md bg-yellow-500 text-black hover:bg-yellow-400 transition">Equipar</button>
+                                    <div class="flex gap-2">
+                                        <button @click="sellItem(type, item.uniqueId)" :disabled="gameState.equipment[type] === item.uniqueId" class="font-pixel text-xs py-2 px-3 rounded-md bg-red-600 text-white hover:bg-red-500 transition disabled:bg-gray-700 disabled:cursor-not-allowed">Vender</button>
+                                        <button v-if="gameState.equipment[type] === item.uniqueId" class="font-pixel text-xs py-2 px-3 rounded-md bg-gray-600" disabled>Instalado</button>
+                                        <button v-else @click="equipItem(type, item.uniqueId)" class="font-pixel text-xs py-2 px-3 rounded-md bg-yellow-500 text-black hover:bg-yellow-400 transition">Instalar</button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <!-- Agentes -->
-                    <div v-if="activeView === 'agents'" class="space-y-2">
+                    <!-- Scripts -->
+                    <div v-if="activeView === 'scripts'" class="space-y-2">
                          <div v-for="agent in agentsData" :key="agent.id" class="flex items-center justify-between bg-gray-800 p-3 rounded-lg">
                             <div>
                                 <p class="font-bold"><i :class="['fa-solid', agent.icon, 'mr-2']"></i>{{ agent.name }} ({{ gameState.agents[agent.id] || 0 }})</p>
@@ -242,16 +256,16 @@
                     <!-- Treinamento -->
                     <div v-if="activeView === 'training'" class="space-y-2">
                         <div v-for="(value, attr) in gameState.attributes" :key="attr" class="flex items-center justify-between bg-gray-800 p-3 rounded-lg">
-                            <p class="font-bold capitalize">Treinar {{ {forca: 'Força', destreza: 'Destreza', vigor: 'Vigor'}[attr] || attr }}</p>
+                            <p class="font-bold capitalize">Treinar {{ {processamento: 'Processamento', agilidade: 'Agilidade', ofuscacao: 'Ofuscação'}[attr] || attr }}</p>
                             <button @click="trainAttribute(attr)" :disabled="gameState.creds < getTrainCost(attr)" class="font-pixel text-sm py-2 px-4 rounded-md bg-cyan-400 text-black hover:bg-cyan-300 transition disabled:bg-gray-700 disabled:text-gray-400">{{ formatNumber(getTrainCost(attr)) }} Creds</button>
                         </div>
                         <hr class="border-gray-700 my-4">
                         <div class="flex items-center justify-between bg-gray-800 p-3 rounded-lg">
                             <div>
-                                <p class="font-bold capitalize">Aprimorar Velocidade de Combate</p>
-                                <p class="text-sm text-gray-400">Velocidade atual: Nível {{ formatNumber(gameState.combatSpeedLevel) }}</p>
+                                <p class="font-bold capitalize">Aprimorar Velocidade de Invasão</p>
+                                <p class="text-sm text-gray-400">Velocidade atual: Nível {{ formatNumber(gameState.hackSpeedLevel) }}</p>
                             </div>
-                            <button @click="upgradeCombatSpeed" :disabled="gameState.creds < getCombatSpeedUpgradeCost" class="font-pixel text-sm py-2 px-4 rounded-md bg-cyan-400 text-black hover:bg-cyan-300 transition disabled:bg-gray-700 disabled:text-gray-400">{{ formatNumber(getCombatSpeedUpgradeCost) }} Creds</button>
+                            <button @click="upgradeHackSpeed" :disabled="gameState.creds < getHackSpeedUpgradeCost" class="font-pixel text-sm py-2 px-4 rounded-md bg-cyan-400 text-black hover:bg-cyan-300 transition disabled:bg-gray-700 disabled:text-gray-400">{{ formatNumber(getHackSpeedUpgradeCost) }} Creds</button>
                         </div>
                         <div class="flex items-center justify-between bg-gray-800 p-3 rounded-lg">
                             <div>
@@ -262,10 +276,10 @@
                         </div>
                         <div class="flex items-center justify-between bg-gray-800 p-3 rounded-lg">
                             <div>
-                                <p class="font-bold capitalize">Aprimorar Dano Crítico</p>
-                                <p class="text-sm text-gray-400">Dano atual: +{{ formatNumber((computedStats.critDamageMultiplier - 1) * 100) }}%</p>
+                                <p class="font-bold capitalize">Aprimorar Multiplicador Crítico</p>
+                                <p class="text-sm text-gray-400">Multiplicador atual: +{{ formatNumber((computedStats.critMultiplier - 1) * 100) }}%</p>
                             </div>
-                            <button @click="upgradeCritDamage" :disabled="gameState.creds < getCritDamageUpgradeCost" class="font-pixel text-sm py-2 px-4 rounded-md bg-cyan-400 text-black hover:bg-cyan-300 transition disabled:bg-gray-700 disabled:text-gray-400">{{ formatNumber(getCritDamageUpgradeCost) }} Creds</button>
+                            <button @click="upgradeCritMultiplier" :disabled="gameState.creds < getCritMultiplierUpgradeCost" class="font-pixel text-sm py-2 px-4 rounded-md bg-cyan-400 text-black hover:bg-cyan-300 transition disabled:bg-gray-700 disabled:text-gray-400">{{ formatNumber(getCritMultiplierUpgradeCost) }} Creds</button>
                         </div>
                          <div class="flex items-center justify-between bg-gray-800 p-3 rounded-lg">
                             <div>
@@ -302,39 +316,13 @@
                              </div>
                          </div>
                     </div>
-                    <!-- Contratos -->
-                    <div v-if="activeView === 'contracts'">
-                        <div v-if="activeContract" class="bg-gray-800 p-4 rounded-lg">
-                            <h3 class="font-pixel text-cyan-400">{{ activeContract.name }}</h3>
-                            <p class="text-sm text-gray-400 my-2">{{ activeContract.description }}</p>
-                            <div class="w-full bg-gray-900 rounded-full h-2.5">
-                                <div class="bg-green-500 h-2.5 rounded-full" :style="{width: contractProgress.percentage + '%'}"></div>
-                            </div>
-                            <p class="text-center text-sm mt-1">{{ contractProgress.text }}</p>
-                            <div class="mt-4 flex gap-4">
-                                <button v-if="isContractComplete" @click="claimReward" class="w-full font-pixel text-sm py-2 px-4 rounded-md bg-green-500 text-black hover:bg-green-400 transition">Coletar Recompensa</button>
-                                <button v-else @click="cancelContract" class="w-full font-pixel text-sm py-2 px-4 rounded-md bg-red-600 text-white hover:bg-red-500 transition">Cancelar</button>
-                            </div>
-                        </div>
-                        <div v-else class="space-y-2">
-                            <p class="text-center text-gray-400 mb-4">Nenhum contrato ativo. Escolha um abaixo.</p>
-                            <div v-for="contract in availableContracts" :key="contract.id" class="flex items-center justify-between bg-gray-800 p-3 rounded-lg">
-                                <div>
-                                    <p class="font-bold">{{ contract.name }}</p>
-                                    <p class="text-sm text-gray-400">Recompensa: {{ formatNumber(contract.reward.value) }} {{ contract.reward.type === 'creds' ? 'Creds' : 'PH' }}</p>
-                                </div>
-                                <button @click="acceptContract(contract.id)" class="font-pixel text-sm py-2 px-4 rounded-md bg-cyan-400 text-black hover:bg-cyan-300 transition">Aceitar</button>
-                            </div>
-                             <p v-if="!availableContracts.length" class="text-center text-gray-500">Nenhum contrato disponível no momento. Volte mais tarde.</p>
-                        </div>
-                    </div>
                     <!-- Conquistas -->
                     <div v-if="activeView === 'achievements'" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         <div v-for="achievement in achievementsData" :key="achievement.id" class="bg-gray-800 p-3 rounded-lg flex items-center gap-4" :class="{'opacity-50': !isAchievementCompleted(achievement.id)}">
                             <i class="fa-solid fa-trophy text-3xl" :class="isAchievementCompleted(achievement.id) ? 'text-yellow-400' : 'text-gray-600'"></i>
                             <div>
                                 <p class="font-bold">{{ achievement.name }}</p>
-                                <p class="text-xs text-gray-400">{{ achievement.description }}</p>
+                                <p class="text-xs text-gray-400">{{ achievement.description }} ({{ getAchievementProgress(achievement) }})</p>
                                 <p v-if="isAchievementCompleted(achievement.id)" class="text-xs text-green-400 font-bold">Bônus: {{ achievement.bonus.description }}</p>
                             </div>
                         </div>
@@ -355,7 +343,7 @@
         <div v-if="showOfflineModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 animate__animated animate__fadeIn">
             <div class="bg-[#1a1a1a] p-8 rounded-xl border-2 border-cyan-400 text-center max-w-sm w-full animate__animated animate__zoomIn">
                 <h2 class="font-pixel text-2xl text-cyan-400">Bem-vindo de volta!</h2>
-                <p class="my-4 text-lg">Enquanto esteve fora, seus agentes mineraram:</p>
+                <p class="my-4 text-lg">Enquanto esteve fora, seus scripts mineraram:</p>
                 <p class="font-pixel text-2xl text-yellow-400">{{ formatNumber(offlineGains) }} Creds</p>
                 <button @click="showOfflineModal = false" class="mt-6 font-pixel text-sm py-3 px-6 rounded-md bg-cyan-500 text-black hover:bg-cyan-400 transition">Coletar</button>
             </div>
@@ -382,54 +370,89 @@
             setup() {
                 // --- GAME DATA (Constants) ---
                 const PRESTIGE_LEVEL_REQ = 50;
-                const equipmentData = {
-                    arma: [ { id: 'w1', name: 'Pistola Básica', cost: 50, icon: 'fa-gun', bonus: { stat: 'attack', value: 2 } }, { id: 'w2', name: 'Submetralhadora', cost: 250, icon: 'fa-dragon', bonus: { stat: 'attack', value: 10 } }, { id: 'w3', name: 'Rifle de Precisão', cost: 1200, icon: 'fa-bullseye', bonus: { stat: 'attack', value: 40 } }, { id: 'w4', name: 'Railgun', cost: 8000, icon: 'fa-bolt-lightning', bonus: { stat: 'attack', value: 150 } } ],
-                    armadura: [ { id: 'a1', name: 'Jaqueta Reforçada', cost: 75, icon: 'fa-shirt', bonus: { stat: 'defense', value: 5 } }, { id: 'a2', name: 'Colete de Kevlar', cost: 300, icon: 'fa-user-shield', bonus: { stat: 'defense', value: 20 } }, { id: 'a3', name: 'Placas de Titânio', cost: 1500, icon: 'fa-shield-halved', bonus: { stat: 'defense', value: 80 } }, { id: 'a4', name: 'Exo-traje de Combate', cost: 10000, icon: 'fa-user-astronaut', bonus: { stat: 'defense', value: 300 } } ],
-                    implante: [ { id: 'i1', name: 'Olho Cibernético', cost: 500, icon: 'fa-eye', bonus: { stat: 'destreza', value: 5 } }, { id: 'i2', name: 'Braço Hidráulico', cost: 800, icon: 'fa-robot', bonus: { stat: 'forca', value: 8 } }, { id: 'i3', name: 'Link Neural Avançado', cost: 12000, icon: 'fa-brain', bonus: { stat: 'destreza', value: 25 } } ]
+
+                const rarities = {
+                    comum: { name: 'Comum', color: 'var(--rarity-comum)', multiplier: 1, weight: 100, minLevel: 1 },
+                    incomum: { name: 'Incomum', color: 'var(--rarity-incomum)', multiplier: 1.5, weight: 30, minLevel: 5 },
+                    raro: { name: 'Raro', color: 'var(--rarity-raro)', multiplier: 2.5, weight: 10, minLevel: 15 },
+                    lendario: { name: 'Lendário', color: 'var(--rarity-lendario)', multiplier: 4, weight: 2, minLevel: 30 }
                 };
-                const agentsData = [ { id: 'ag1', name: 'Drone de Mineração', cost: 1000, icon: 'fa-helicopter', cps: 0.5 }, { id: 'ag2', name: 'Bot de Trading', cost: 5000, icon: 'fa-chart-line', cps: 3 }, { id: 'ag3', name: 'IA de Investimento', cost: 25000, icon: 'fa-brain', cps: 15 } ];
-                const enemyData = reactive([ 
-                    { id: 'e1', level: 1, name: 'Drone de Segurança', icon: 'fa-crosshairs', color: '#f04a4a', defense: 10, attack: 5, reward: { xp: 10, creds: 5 } }, 
-                    { id: 'e2', level: 5, name: 'Guarda Corporativo', icon: 'fa-user-shield', color: '#f0a04a', defense: 50, attack: 20, reward: { xp: 50, creds: 25 } }, 
-                    { id: 'e3', level: 10, name: 'Mecha de Patrulha', icon: 'fa-robot', color: '#e0e0e0', defense: 200, attack: 50, reward: { xp: 200, creds: 100 } }, 
-                    { id: 'e4', level: 20, name: 'Netrunner Inimigo', icon: 'fa-user-secret', color: '#ff00ff', defense: 500, attack: 120, reward: { xp: 750, creds: 400 } },
-                    { id: 'e5', level: 30, name: 'Cyborg Assassino', icon: 'fa-skull-crossbones', color: '#9d4edd', defense: 2000, attack: 300, reward: { xp: 3000, creds: 1500 } },
-                    { id: 'e6', level: 40, name: 'Mecha Pesado', icon: 'fa-jet-fighter', color: '#ff5c5c', defense: 8000, attack: 600, reward: { xp: 10000, creds: 5000 } }
+
+                const specialEffectsPool = {
+                    deck: [
+                        { type: 'critChanceBonus', value: () => 0.01 + Math.random() * 0.02, description: (val) => `+${(val*100).toFixed(1)}% Chance Crítica` },
+                        { type: 'critMultiplierBonus', value: () => 0.1 + Math.random() * 0.15, description: (val) => `+${(val*100).toFixed(0)}% Multiplicador Crítico` }
+                    ],
+                    software: [
+                        { type: 'traceResist', value: () => 0.05 + Math.random() * 0.05, description: (val) => `${(val*100).toFixed(0)}% de chance de resistir ao Rastreamento` },
+                        { type: 'lootChanceBonus', value: () => 0.03 + Math.random() * 0.02, description: (val) => `+${(val*100).toFixed(0)}% Chance de Loot` }
+                    ],
+                    implante: [
+                        { type: 'cpsBonus', value: () => 0.1 + Math.random() * 0.1, description: (val) => `+${(val*100).toFixed(0)}% Ganhos de Scripts` }
+                    ]
+                };
+
+                const hardwareData = {
+                    deck: [ { id: 'd1', name: 'Deck Básico', icon: 'fa-microchip', bonus: { stat: 'processamento', value: 2 } }, { id: 'd2', name: 'Deck Militar', icon: 'fa-server', bonus: { stat: 'processamento', value: 10 } }, { id: 'd3', name: 'Deck Quântico', icon: 'fa-atom', bonus: { stat: 'processamento', value: 40 } } ],
+                    software: [ { id: 's1', name: 'Proxy Simples', icon: 'fa-mask', bonus: { stat: 'ofuscacao', value: 3 } }, { id: 's2', name: 'Software de Camuflagem', icon: 'fa-user-secret', bonus: { stat: 'ofuscacao', value: 15 } }, { id: 's3', name: 'Firewall Pessoal', icon: 'fa-shield-halved', bonus: { stat: 'ofuscacao', value: 60 } } ],
+                    implante: [ { id: 'i1', name: 'Implante de Reflexo', icon: 'fa-bolt', bonus: { stat: 'agilidade', value: 5 } }, { id: 'i2', name: 'Co-processador Craniano', icon: 'fa-brain', bonus: { stat: 'processamento', value: 8 } }, { id: 'i3', name: 'Link Neural Avançado', icon: 'fa-wifi', bonus: { stat: 'agilidade', value: 25 } } ]
+                };
+
+                const agentsData = [ { id: 'ag1', name: 'Script de Mineração', cost: 1000, icon: 'fa-scroll', cps: 0.5 }, { id: 'ag2', name: 'Bot de Trading', cost: 5000, icon: 'fa-chart-line', cps: 3 }, { id: 'ag3', name: 'IA de Investimento', cost: 25000, icon: 'fa-brain', cps: 15 } ];
+                
+                const systemData = reactive([ 
+                    { id: 'sys1', level: 1, name: 'Firewall Corporativo', icon: 'fa-shield-virus', color: '#f04a4a', encryption: 5, processingPower: 2, reward: { rep: 10, creds: 5 }, loot: { dropChance: 0.15, types: ['software', 'deck'] } }, 
+                    { id: 'sys2', level: 5, name: 'Servidor de Dados', icon: 'fa-server', color: '#f0a04a', encryption: 25, processingPower: 10, reward: { rep: 50, creds: 25 }, loot: { dropChance: 0.20, types: ['deck', 'software', 'implante'] } }, 
+                    { id: 'sys3', level: 10, name: 'Nó de Rede Segura', icon: 'fa-network-wired', color: '#e0e0e0', encryption: 100, processingPower: 40, reward: { rep: 200, creds: 100 }, loot: { dropChance: 0.25, types: ['deck', 'software', 'implante'] } }, 
+                    { id: 'sys4', level: 20, name: 'IA de Segurança', icon: 'fa-robot', color: '#ff00ff', encryption: 400, processingPower: 100, reward: { rep: 750, creds: 400 }, loot: { dropChance: 0.30, types: ['implante', 'deck'] } },
+                    { id: 'sys5', level: 30, name: 'Consciência Digital', icon: 'fa-ghost', color: '#9d4edd', encryption: 1500, processingPower: 250, reward: { rep: 3000, creds: 1500 }, loot: { dropChance: 0.35, types: ['deck', 'implante', 'software'] } },
+                    { id: 'sys6', level: 40, name: 'O Arasaka Mainframe', icon: 'fa-building-shield', color: '#ff5c5c', encryption: 6000, processingPower: 500, reward: { rep: 10000, creds: 5000 }, loot: { dropChance: 0.4, types: ['deck', 'software', 'implante'] } }
                 ]);
+
                 const skillsData = {
-                    passive: [ { id: 'p1', name: 'Protocolo de Eficiência', maxLevel: 5, cost: 1, description: 'Aumenta o ganho de XP em 5% por nível.', bonus: { stat: 'xpMultiplier', value: 0.05 }, requires: null }, { id: 'p2', name: 'Conexão Neural', maxLevel: 5, cost: 1, description: 'Aumenta a chance de drop de créditos em 2% por nível.', bonus: { stat: 'critCredChance', value: 0.02 }, requires: 'p1' }, { id: 'p3', name: 'Otimização de Rota', maxLevel: 10, cost: 2, description: 'Aumenta o ganho de Creds/s em 10% por nível.', bonus: { stat: 'cpsMultiplier', value: 0.10 }, requires: 'p2' } ],
-                    active: [ { id: 'ac1', name: 'Overdrive', cost: 2500, icon: 'fa-bolt', description: 'Aumenta o ataque em 200% por 10s.', cooldown: 60, duration: 10, effect: { type: 'multiplier', stat: 'attack', value: 2 } }, { id: 'ac2', name: 'Hack de Créditos', cost: 5000, icon: 'fa-sack-dollar', description: 'Gera instantaneamente o equivalente a 30 segundos de ganhos.', cooldown: 120, effect: { type: 'instant', stat: 'creds', value: 30 } }, { id: 'ac3', name: 'Pulso EMP', cost: 15000, icon: 'fa-burst', description: 'Gera instantaneamente o equivalente a 5 minutos de ganhos.', cooldown: 300, effect: { type: 'instant', stat: 'creds', value: 300 } } ]
+                    passive: [ { id: 'p1', name: 'Protocolo de Eficiência', maxLevel: 5, cost: 1, description: 'Aumenta o ganho de REP em 5% por nível.', bonus: { stat: 'repMultiplier', value: 0.05 }, requires: null }, { id: 'p2', name: 'Conexão Neural', maxLevel: 5, cost: 1, description: 'Aumenta a chance de extrair mais Creds em 2% por nível.', bonus: { stat: 'critCredChance', value: 0.02 }, requires: 'p1' }, { id: 'p3', name: 'Otimização de Rota', maxLevel: 10, cost: 2, description: 'Aumenta o ganho de Creds/s em 10% por nível.', bonus: { stat: 'cpsMultiplier', value: 0.10 }, requires: 'p2' } ],
+                    active: [ { id: 'ac1', name: 'Overclock', cost: 2500, icon: 'fa-bolt', description: 'Aumenta o Poder de Invasão em 200% por 10s.', cooldown: 60, duration: 10, effect: { type: 'multiplier', stat: 'invasionPower', value: 2 } }, { id: 'ac2', name: 'Hack de Créditos', cost: 5000, icon: 'fa-sack-dollar', description: 'Gera instantaneamente o equivalente a 30 segundos de ganhos.', cooldown: 120, effect: { type: 'instant', stat: 'creds', value: 30 } }, { id: 'ac3', name: 'Pulso EMP', cost: 15000, icon: 'fa-burst', description: 'Gera instantaneamente o equivalente a 5 minutos de ganhos.', cooldown: 300, effect: { type: 'instant', stat: 'creds', value: 300 } } ]
                 };
-                const contractsData = [ { id: 'c1', name: 'Exterminar Drones', description: 'Derrube Drones de Segurança para coletar seus componentes.', type: 'kill', target: 'e1', targetCount: 50, minLevel: 1, reward: { type: 'creds', value: 2500 } }, { id: 'c2', name: 'Limpeza Corporativa', description: 'Elimine os Guardas Corporativos que patrulham a área.', type: 'kill', target: 'e2', targetCount: 25, minLevel: 5, reward: { type: 'creds', value: 5000 } }, { id: 'c3', name: 'Primeiros Passos', description: 'Acumule uma pequena fortuna para provar seu valor.', type: 'collect_creds', targetCount: 10000, minLevel: 1, reward: { type: 'skillPoints', value: 1 } }, { id: 'c4', name: 'Caça ao Assassino', description: 'Neutralize o perigoso Cyborg Assassino.', type: 'kill', target: 'e5', targetCount: 10, minLevel: 30, reward: { type: 'skillPoints', value: 5 } } ];
-                const achievementsData = [ { id: 'ach1', name: 'Clicador Iniciante', description: 'Clique 100 vezes.', type: 'clicks', target: 100, bonus: { stat: 'globalMultiplier', value: 0.01, description: '+1% de ganhos de Creds' } }, { id: 'ach2', name: 'Mercenário Novato', description: 'Alcance o nível 10.', type: 'level', target: 10, bonus: { stat: 'globalMultiplier', value: 0.02, description: '+2% de ganhos de XP' } }, { id: 'ach3', name: 'Pequeno Investidor', description: 'Acumule 10.000 Creds.', type: 'totalCreds', target: 10000, bonus: { stat: 'globalMultiplier', value: 0.02, description: '+2% de ganhos de Creds' } }, { id: 'ach4', name: 'Veterano das Ruas', description: 'Alcance o nível 25.', type: 'level', target: 25, bonus: { stat: 'xpMultiplier', value: 0.05, description: '+5% de ganhos de XP' } }, ];
+                
+                const achievementsData = [ 
+                    { id: 'ach1', name: 'Netrunner Iniciante', description: 'Execute 100 ciclos de invasão', type: 'clicks', target: 100, bonus: { stat: 'globalMultiplier', value: 0.01, description: '+1% Creds' } }, 
+                    { id: 'ach2', name: 'Mercenário Digital', description: 'Alcance o nível 10', type: 'level', target: 10, bonus: { stat: 'repMultiplier', value: 0.02, description: '+2% REP' } }, 
+                    { id: 'ach3', name: 'Pequeno Investidor', description: 'Acumule 10.000 Creds', type: 'totalCreds', target: 10000, bonus: { stat: 'globalMultiplier', value: 0.02, description: '+2% Creds' } }, 
+                    { id: 'ach4', name: 'Fantasma na Máquina', description: 'Alcance o nível 25', type: 'level', target: 25, bonus: { stat: 'repMultiplier', value: 0.05, description: '+5% REP' } },
+                    { id: 'ach5', name: 'Caçador de Bugs', description: 'Invada 50 Firewalls', type: 'hackSystem', target: 'sys1', count: 50, bonus: { stat: 'invasionPowerMultiplier', value: 0.05, description: '+5% Poder de Invasão' } },
+                    { id: 'ach6', name: 'Ladrão de Dados', description: 'Invada 25 Servidores de Dados', type: 'hackSystem', target: 'sys2', count: 25, bonus: { stat: 'globalMultiplier', value: 0.05, description: '+5% Creds' } },
+                    { id: 'ach7', name: 'Milionário da Net', description: 'Acumule 1.000.000 Creds', type: 'totalCreds', target: 1000000, bonus: { stat: 'globalMultiplier', value: 0.10, description: '+10% Creds' } },
+                    { id: 'ach8', name: 'Colecionador', description: 'Colete 10 peças de hardware', type: 'hardwareCount', target: 10, bonus: { stat: 'repMultiplier', value: 0.10, description: '+10% REP' } },
+                    { id: 'ach9', name: 'Arsenal Lendário', description: 'Colete 1 peça de hardware Lendária', type: 'hardwareRarity', target: 'lendario', count: 1, bonus: { stat: 'invasionPowerMultiplier', value: 0.10, description: '+10% Poder de Invasão' } },
+                    { id: 'ach10', name: 'Primeiro Prestígio', description: 'Realize o prestígio pela primeira vez', type: 'prestige', target: 1, bonus: { stat: 'globalMultiplier', value: 0.15, description: '+15% Creds e REP' } },
+                ];
+
                 const eventData = [
-                    { id: 'evt1', name: 'Surto de Dados', description: 'Ganhos de XP +50%!', icon: 'fa-brain', duration: 90, effect: { stat: 'xpMultiplier', value: 0.5 } },
+                    { id: 'evt1', name: 'Surto de Dados', description: 'Ganhos de REP +50%!', icon: 'fa-brain', duration: 90, effect: { stat: 'repMultiplier', value: 0.5 } },
                     { id: 'evt2', name: 'Mercado em Alta', description: 'Ganhos de Creds +50%!', icon: 'fa-chart-line', duration: 90, effect: { stat: 'credsMultiplier', value: 0.5 } },
-                    { id: 'evt3', name: 'Adrenalina de Combate', description: 'Velocidade de Combate +25%!', icon: 'fa-bolt', duration: 90, effect: { stat: 'combatSpeed', value: 0.25 } }
+                    { id: 'evt3', name: 'Adrenalina Digital', description: 'Velocidade de Invasão +25%!', icon: 'fa-bolt', duration: 90, effect: { stat: 'hackSpeed', value: 0.25 } }
                 ];
 
                 // --- GAME STATE (Reactive) ---
                 const defaultGameState = () => ({
-                    level: 1, xp: 0, xpToNextLevel: 100, creds: 0, skillPoints: 0, prestigePoints: 0,
-                    health: 100,
+                    version: 8,
+                    level: 1, rep: 0, repToNextLevel: 100, creds: 0, skillPoints: 0, prestigePoints: 0,
+                    traceLevel: 0,
                     lastSaveTimestamp: dayjs().valueOf(),
-                    attributes: { forca: 1, destreza: 1, vigor: 1 },
-                    equipment: { arma: null, armadura: null, implante: null },
-                    inventory: { arma: [], armadura: [], implante: [] },
+                    attributes: { processamento: 1, agilidade: 1, ofuscacao: 1 },
+                    equipment: { deck: null, software: null, implante: null },
+                    inventory: { deck: [], software: [], implante: [] },
                     agents: {},
                     skills: { passive: {}, active: {} },
                     activeEffects: {},
                     skillCooldowns: {},
-                    activeContractId: null,
-                    contractProgress: { collectedCreds: 0 },
-                    completedContractIds: [],
-                    stats: { totalClicks: 0, totalCreds: 0, enemiesDefeated: {} },
+                    stats: { totalClicks: 0, totalCreds: 0, systemsHacked: {}, prestigeCount: 0 },
                     completedAchievementIds: [],
-                    combatSpeedLevel: 1,
+                    hackSpeedLevel: 1,
                     critChanceLevel: 1,
-                    critDamageLevel: 1,
+                    critMultiplierLevel: 1,
                     comboDurationLevel: 1,
-                    currentEnemyId: 'e1',
+                    currentTargetSystemId: 'sys1',
                     activeEventId: null,
                     eventEndTime: 0,
                     comboCount: 0,
@@ -443,16 +466,6 @@
                 // --- UI STATE ---
                 const activeView = ref(null);
                 const isMenuOpen = ref(false);
-                const shopTabs = [
-                    { id: 'character', name: 'Personagem', icon: 'fa-user' },
-                    { id: 'equipment', name: 'Equipamentos', icon: 'fa-store' },
-                    { id: 'agents', name: 'Agentes', icon: 'fa-users' },
-                    { id: 'training', name: 'Treinamento', icon: 'fa-dumbbell' },
-                    { id: 'skills', name: 'Habilidades', icon: 'fa-brain' },
-                    { id: 'contracts', name: 'Contratos', icon: 'fa-file-signature' },
-                    { id: 'achievements', name: 'Conquistas', icon: 'fa-trophy' },
-                    { id: 'system', name: 'Sistema', icon: 'fa-cogs' },
-                ];
                 const floatingTexts = ref([]);
                 const actionPanelRef = ref(null);
                 const toast = reactive({ show: false, message: '', icon: 'fa-save', color: 'var(--highlight-color)' });
@@ -463,30 +476,61 @@
                 const confirmMessage = ref('');
                 const confirmCallback = ref(null);
                 const currentTime = ref(dayjs().valueOf());
-                const combatProgress = ref(0);
-                const isPlayerDefeated = ref(false);
-                const playerDefeatedTimer = ref(0);
+                const hackProgress = ref(0);
+                const isPlayerDisconnected = ref(false);
+                const playerDisconnectedTimer = ref(0);
+                const inventorySort = reactive({ deck: 'rarity', software: 'rarity', implante: 'rarity' });
                 
                 // --- COMPUTED PROPERTIES ---
+                const viewData = {
+                    netrunner: { name: 'Netrunner', icon: 'fa-user' },
+                    hardware: { name: 'Hardware', icon: 'fa-boxes-stacked' },
+                    scripts: { name: 'Scripts', icon: 'fa-scroll' },
+                    training: { name: 'Treinamento', icon: 'fa-dumbbell' },
+                    skills: { name: 'Habilidades', icon: 'fa-brain' },
+                    achievements: { name: 'Conquistas', icon: 'fa-trophy' },
+                    system: { name: 'Sistema', icon: 'fa-cogs' },
+                    systemSelection: { name: 'Seleção de Alvo', icon: 'fa-crosshairs' }
+                };
+
+                const menuTabs = computed(() => Object.keys(viewData)
+                    .filter(key => key !== 'systemSelection')
+                    .map(key => ({ id: key, ...viewData[key] }))
+                );
+
+                const currentViewName = computed(() => (viewData[activeView.value] || { name: '' }).name);
+                const currentViewIcon = computed(() => (viewData[activeView.value] || { icon: '' }).icon);
+
                 const activeEvent = computed(() => eventData.find(e => e.id === gameState.activeEventId));
                 const activeEventTimer = computed(() => {
                     if (!activeEvent.value) return 0;
                     return Math.max(0, dayjs(gameState.eventEndTime).diff(currentTime.value, 'second'));
                 });
-
-                const currentViewName = computed(() => (shopTabs.find(t => t.id === activeView.value) || {name: 'Seleção de Alvo'}).name);
-                const currentViewIcon = computed(() => (shopTabs.find(t => t.id === activeView.value) || {icon: 'fa-crosshairs'}).icon);
                 
-                const getCombatSpeedUpgradeCost = computed(() => Math.floor(50 * Math.pow(1.5, gameState.combatSpeedLevel)));
-                const getCritChanceUpgradeCost = computed(() => Math.floor(100 * Math.pow(1.8, gameState.critChanceLevel)));
-                const getCritDamageUpgradeCost = computed(() => Math.floor(150 * Math.pow(1.7, gameState.critDamageLevel)));
-                const getComboDurationUpgradeCost = computed(() => Math.floor(200 * Math.pow(1.6, gameState.comboDurationLevel)));
+                const getHackSpeedUpgradeCost = computed(() => {
+                    const level = Number(gameState.hackSpeedLevel) || 1;
+                    return Math.floor(50 * Math.pow(1.5, level));
+                });
+                const getCritChanceUpgradeCost = computed(() => {
+                    const level = Number(gameState.critChanceLevel) || 1;
+                    return Math.floor(100 * Math.pow(1.8, level));
+                });
+                const getCritMultiplierUpgradeCost = computed(() => {
+                    const level = Number(gameState.critMultiplierLevel) || 1;
+                    return Math.floor(150 * Math.pow(1.7, level));
+                });
+                const getComboDurationUpgradeCost = computed(() => {
+                    const level = Number(gameState.comboDurationLevel) || 1;
+                    return Math.floor(200 * Math.pow(1.6, level));
+                });
 
                 const achievementBonus = computed(() => {
-                    const bonuses = { globalMultiplier: 1, xpMultiplier: 1 };
+                    const bonuses = { globalMultiplier: 1, repMultiplier: 1, invasionPowerMultiplier: 1 };
                     gameState.completedAchievementIds.forEach(id => {
                         const achievement = achievementsData.find(a => a.id === id);
-                        if (achievement) bonuses[achievement.bonus.stat] = (bonuses[achievement.bonus.stat] || 1) + achievement.bonus.value;
+                        if (achievement) {
+                            bonuses[achievement.bonus.stat] = (bonuses[achievement.bonus.stat] || 1) + achievement.bonus.value;
+                        }
                     });
                     return bonuses;
                 });
@@ -496,26 +540,42 @@
                     const eqIds = gameState.equipment;
                     const achBonus = achievementBonus.value;
                     const prestigeBonus = 1 + (gameState.prestigePoints * 0.01);
-                    let passiveBonuses = { xpMultiplier: 1, critCredChance: 0, cpsMultiplier: 1 };
+                    
+                    let passiveBonuses = { repMultiplier: 1, critCredChance: 0, cpsMultiplier: 1 };
                     for (const skillId in gameState.skills.passive) {
                         const skillLevel = gameState.skills.passive[skillId];
                         const skillInfo = skillsData.passive.find(s => s.id === skillId);
                         if (skillInfo) passiveBonuses[skillInfo.bonus.stat] = (passiveBonuses[skillInfo.bonus.stat] || 1) + skillInfo.bonus.value * skillLevel;
                     }
-                    const equippedImplante = getItem('implante', eqIds.implante);
-                    let currentForca = base.forca + (equippedImplante?.bonus.stat === 'forca' ? equippedImplante.bonus.value : 0);
-                    let currentDestreza = base.destreza + (equippedImplante?.bonus.stat === 'destreza' ? equippedImplante.bonus.value : 0);
-                    let totalAttack = currentForca * 2 + currentDestreza;
-                    let totalDefense = base.vigor * 3;
-                    const equippedArma = getItem('arma', eqIds.arma);
-                    if (equippedArma) totalAttack += equippedArma.bonus.value;
-                    const equippedArmadura = getItem('armadura', eqIds.armadura);
-                    if (equippedArmadura) totalDefense += equippedArmadura.bonus.value;
+
+                    let specialBonuses = { critChanceBonus: 0, critMultiplierBonus: 0, traceResist: 0, cpsBonus: 1, lootChanceBonus: 0 };
+                    Object.values(gameState.equipment).forEach(itemId => {
+                        if (!itemId) return;
+                        const itemType = Object.keys(gameState.inventory).find(type => gameState.inventory[type].some(i => i.uniqueId === itemId));
+                        if(!itemType) return;
+                        const item = getItem(itemType, itemId);
+                        if (item && item.specialEffect) {
+                            specialBonuses[item.specialEffect.type] = (specialBonuses[item.specialEffect.type] || (item.specialEffect.type === 'cpsBonus' ? 1 : 0)) + item.specialEffect.value;
+                        }
+                    });
                     
-                    if (gameState.activeEffects.overdrive) {
+                    const equippedImplante = getItem('implante', eqIds.implante);
+                    let currentProcessamento = base.processamento + (equippedImplante?.bonus.stat === 'processamento' ? equippedImplante.bonus.value : 0);
+                    let currentAgilidade = base.agilidade + (equippedImplante?.bonus.stat === 'agilidade' ? equippedImplante.bonus.value : 0);
+                    
+                    let totalInvasionPower = ((currentProcessamento * 5) + (currentAgilidade * 2)) * achBonus.invasionPowerMultiplier;
+                    let totalSecurity = base.ofuscacao * 3;
+
+                    const equippedDeck = getItem('deck', eqIds.deck);
+                    if (equippedDeck) totalInvasionPower += equippedDeck.bonus.value;
+                    
+                    const equippedSoftware = getItem('software', eqIds.software);
+                    if (equippedSoftware) totalSecurity += equippedSoftware.bonus.value;
+                    
+                    if (gameState.activeEffects.overclock) {
                         const skillInfo = skillsData.active.find(s => s.id === 'ac1');
                         if (skillInfo) {
-                            totalAttack *= (1 + skillInfo.effect.value);
+                            totalInvasionPower *= (1 + skillInfo.effect.value);
                         }
                     }
 
@@ -525,28 +585,30 @@
                         if (agentInfo) totalCps += gameState.agents[agentId] * agentInfo.cps;
                     }
 
-                    let eventBonus = { xpMultiplier: 1, credsMultiplier: 1, combatSpeed: 1 };
+                    let eventBonus = { repMultiplier: 1, credsMultiplier: 1, hackSpeed: 1 };
                     if (activeEvent.value) {
                         eventBonus[activeEvent.value.effect.stat] = 1 + activeEvent.value.effect.value;
                     }
 
                     return {
-                        attack: totalAttack,
-                        defense: totalDefense,
-                        maxHealth: 100 + (base.vigor - 1) * 20,
-                        credsPerSecond: totalCps * achBonus.globalMultiplier * passiveBonuses.cpsMultiplier,
-                        xpMultiplier: passiveBonuses.xpMultiplier * achBonus.xpMultiplier * eventBonus.xpMultiplier,
+                        invasionPower: totalInvasionPower,
+                        security: totalSecurity,
+                        maxTrace: 100 + (base.ofuscacao - 1) * 20,
+                        credsPerSecond: totalCps * achBonus.globalMultiplier * passiveBonuses.cpsMultiplier * specialBonuses.cpsBonus,
+                        repMultiplier: passiveBonuses.repMultiplier * achBonus.repMultiplier * eventBonus.repMultiplier,
                         credsMultiplier: eventBonus.credsMultiplier,
-                        critChance: 0.05 + (gameState.critChanceLevel - 1) * 0.005, // 5% base + 0.5% per level
-                        critDamageMultiplier: 1.5 + (gameState.critDamageLevel - 1) * 0.1, // 150% base + 10% per level
+                        critChance: 0.05 + (gameState.critChanceLevel - 1) * 0.005 + specialBonuses.critChanceBonus,
+                        critMultiplier: 1.5 + (gameState.critMultiplierLevel - 1) * 0.1 + specialBonuses.critMultiplierBonus,
                         prestigeBonus,
                         achievementBonus: achBonus.globalMultiplier,
-                        combatSpeed: ((1 + (gameState.combatSpeedLevel - 1) * 0.1) * eventBonus.combatSpeed),
-                        comboRounds: 5 + (gameState.comboDurationLevel - 1)
+                        hackSpeed: ((1 + (gameState.hackSpeedLevel - 1) * 0.1) * eventBonus.hackSpeed),
+                        comboRounds: 5 + (gameState.comboDurationLevel - 1),
+                        lootChanceBonus: specialBonuses.lootChanceBonus,
+                        traceResist: specialBonuses.traceResist
                     };
                 });
 
-                const currentEnemy = computed(() => enemyData.find(e => e.id === gameState.currentEnemyId) || enemyData[0]);
+                const currentTargetSystem = computed(() => systemData.find(e => e.id === gameState.currentTargetSystemId) || systemData[0]);
                 const prestigePointsToGain = computed(() => Math.floor(gameState.level / 20));
 
                 const activeSkills = computed(() => {
@@ -580,27 +642,22 @@
                     });
                 });
 
-                const activeContract = computed(() => {
-                    if (!gameState.activeContractId) return null;
-                    return contractsData.find(c => c.id === gameState.activeContractId);
+                const sortedInventory = computed(() => {
+                    const sorted = {};
+                    const rarityOrder = ['lendario', 'raro', 'incomum', 'comum'];
+                    for (const type in gameState.inventory) {
+                        const items = [...gameState.inventory[type]];
+                        items.sort((a, b) => {
+                            if (inventorySort[type] === 'rarity') {
+                                return rarityOrder.indexOf(a.rarity) - rarityOrder.indexOf(b.rarity);
+                            } else { // power
+                                return b.bonus.value - a.bonus.value;
+                            }
+                        });
+                        sorted[type] = items;
+                    }
+                    return sorted;
                 });
-                
-                const availableContracts = computed(() => {
-                    return contractsData.filter(c => c.minLevel <= gameState.level && !gameState.completedContractIds.includes(c.id));
-                });
-
-                const contractProgress = computed(() => {
-                    const contract = activeContract.value;
-                    if (!contract) return { percentage: 0, text: '' };
-                    let current = 0;
-                    if (contract.type === 'kill') current = gameState.stats.enemiesDefeated[contract.target] || 0;
-                    else if (contract.type === 'collect_creds') current = gameState.contractProgress.collectedCreds || 0;
-                    const percentage = Math.min(100, (current / contract.targetCount) * 100);
-                    const text = `${formatNumber(current)} / ${formatNumber(contract.targetCount)}`;
-                    return { percentage, text };
-                });
-
-                const isContractComplete = computed(() => contractProgress.value.percentage >= 100);
 
                 // --- METHODS ---
                 const toggleMenu = () => isMenuOpen.value = !isMenuOpen.value;
@@ -612,35 +669,39 @@
 
                 const formatNumber = (num, decimals = 0) => {
                     if (num === undefined || num === null || isNaN(num)) return '0';
-                    const options = {};
                     if (decimals > 0) {
-                        options.minimumFractionDigits = decimals;
-                        options.maximumFractionDigits = decimals;
+                         return num.toLocaleString('pt-BR', {
+                            minimumFractionDigits: decimals,
+                            maximumFractionDigits: decimals,
+                        });
                     }
-                    return Math.floor(num).toLocaleString('pt-BR', options);
+                    return Math.floor(num).toLocaleString('pt-BR');
                 }
                 const getItem = (type, id) => {
-                    if (!id) return null;
+                    if (!id || !gameState.inventory[type]) return null;
                     return gameState.inventory[type].find(i => i.uniqueId === id);
                 };
                 
                 const getAgentCost = (id) => {
                     const agent = agentsData.find(a => a.id === id);
                     if (!agent) return Infinity;
-                    return Math.floor(agent.cost * Math.pow(1.15, gameState.agents[id] || 0));
+                    const count = Number(gameState.agents[id]) || 0;
+                    return Math.floor(agent.cost * Math.pow(1.15, count));
                 };
                 
                 const getTrainCost = (attr) => {
-                    return Math.floor(10 * Math.pow(1.2, gameState.attributes[attr]));
+                    const level = Number(gameState.attributes[attr]) || 1;
+                    return Math.floor(10 * Math.pow(1.2, level));
                 };
 
-                const showFloatingText = (content, color, position) => {
+                const showFloatingText = (content, color, position, icon = null) => {
                     if (!actionPanelRef.value) return;
                     const id = Date.now() + Math.random();
                     floatingTexts.value.push({ 
                         id, 
                         content, 
                         color, 
+                        icon,
                         x: position.x,
                         y: position.y
                     });
@@ -650,7 +711,7 @@
                 };
 
                 const manualClick = () => {
-                    if (isPlayerDefeated.value) return;
+                    if (isPlayerDisconnected.value) return;
                     const now = Date.now();
                     if (now - gameState.lastClickTimestamp < 2000) { // 2 second combo window
                         gameState.comboCount = Math.min(10, gameState.comboCount + 1);
@@ -668,18 +729,18 @@
                     
                     gameState.stats.totalClicks++;
                     const comboBonus = 1 + (gameState.comboCount * 0.01);
-                    combatProgress.value = Math.min(100, combatProgress.value + (5 * comboBonus));
+                    hackProgress.value = Math.min(100, hackProgress.value + (5 * comboBonus));
                 };
 
-                const resolveCombat = () => {
+                const resolveHack = () => {
                     const playerStats = computedStats.value;
-                    const enemy = currentEnemy.value;
+                    const system = currentTargetSystem.value;
                     const rect = actionPanelRef.value.getBoundingClientRect();
                     const position = { x: rect.width / 2, y: rect.height / 2 };
 
                     let comboMultiplier = 1;
                     if (gameState.comboBonusActive) {
-                        comboMultiplier = 1 + (gameState.maxComboCount * 0.05); // 5% bonus per combo point
+                        comboMultiplier = 1 + (gameState.maxComboCount * 0.05);
                         gameState.comboBonusRoundsLeft--;
                         if (gameState.comboBonusRoundsLeft <= 0) {
                             gameState.comboBonusActive = false;
@@ -687,63 +748,126 @@
                         }
                     }
 
-                    if (playerStats.attack > enemy.defense) {
+                    if (playerStats.invasionPower > system.encryption) {
                         const isCritical = Math.random() < playerStats.critChance;
-                        const critMultiplier = isCritical ? playerStats.critDamageMultiplier : 1;
+                        const critMultiplier = isCritical ? playerStats.critMultiplier : 1;
                         
-                        const xpGained = enemy.reward.xp * playerStats.xpMultiplier * playerStats.prestigeBonus * critMultiplier * comboMultiplier;
-                        let credsGained = enemy.reward.creds * playerStats.prestigeBonus * playerStats.credsMultiplier * critMultiplier * comboMultiplier;
+                        const repGained = system.reward.rep * playerStats.repMultiplier * playerStats.prestigeBonus * critMultiplier * comboMultiplier;
+                        let credsGained = system.reward.creds * playerStats.prestigeBonus * playerStats.credsMultiplier * critMultiplier * comboMultiplier;
                         
-                        gameState.xp += xpGained;
+                        gameState.rep += repGained;
                         addCreds(credsGained);
                         
-                        if (!gameState.stats.enemiesDefeated[enemy.id]) {
-                            gameState.stats.enemiesDefeated[enemy.id] = 0;
+                        if (!gameState.stats.systemsHacked[system.id]) {
+                            gameState.stats.systemsHacked[system.id] = 0;
                         }
-                        gameState.stats.enemiesDefeated[enemy.id]++;
+                        gameState.stats.systemsHacked[system.id]++;
+                        
+                        generateLoot(system);
 
                         if (isCritical) {
                             showFloatingText('CRÍTICO!', 'var(--crit-color)', { ...position, y: position.y - 60 });
                         }
-                        showFloatingText(`+${formatNumber(xpGained)} XP`, 'var(--xp-color)', { ...position, y: position.y - 30 });
+                        showFloatingText(`+${formatNumber(repGained)} REP`, 'var(--xp-color)', { ...position, y: position.y - 30 });
                         showFloatingText(`+${formatNumber(credsGained)} Creds`, 'var(--gold-color)', position);
 
-                        if (gameState.xp >= gameState.xpToNextLevel) levelUp();
+                        if (gameState.rep >= gameState.repToNextLevel) levelUp();
                     } else {
-                        const damageTaken = Math.max(1, enemy.attack - playerStats.defense);
-                        gameState.health = Math.max(0, gameState.health - damageTaken);
-                        showFloatingText(`-${formatNumber(damageTaken)} Dano`, 'var(--health-color)', position);
+                        if (Math.random() < playerStats.traceResist) {
+                            showFloatingText('Resistido!', 'var(--highlight-color)', position);
+                        } else {
+                            const traceIncrease = Math.max(1, system.processingPower - playerStats.security);
+                            gameState.traceLevel = Math.min(computedStats.value.maxTrace, gameState.traceLevel + traceIncrease);
+                            showFloatingText(`+${formatNumber(traceIncrease)} Rastreamento`, 'var(--trace-color)', position);
+                        }
 
-                        if (gameState.health <= 0) {
-                            isPlayerDefeated.value = true;
-                            playerDefeatedTimer.value = 10;
-                            const defeatTimer = setInterval(() => {
-                                playerDefeatedTimer.value--;
-                                if(playerDefeatedTimer.value <= 0) {
-                                    clearInterval(defeatTimer);
-                                    isPlayerDefeated.value = false;
-                                    gameState.health = computedStats.value.maxHealth;
+                        if (gameState.traceLevel >= computedStats.value.maxTrace) {
+                            isPlayerDisconnected.value = true;
+                            playerDisconnectedTimer.value = 10;
+                            const disconnectTimer = setInterval(() => {
+                                playerDisconnectedTimer.value--;
+                                if(playerDisconnectedTimer.value <= 0) {
+                                    clearInterval(disconnectTimer);
+                                    isPlayerDisconnected.value = false;
+                                    gameState.traceLevel = 0;
                                 }
                             }, 1000);
                         }
                     }
-                    combatProgress.value = 0;
+                    hackProgress.value = 0;
                     if (!gameState.comboBonusActive) gameState.comboCount = 0;
                     checkAchievements();
+                };
+
+                const generateLoot = (system) => {
+                    const finalDropChance = system.loot.dropChance + (computedStats.value.lootChanceBonus || 0);
+                    if (!system.loot || Math.random() > finalDropChance) return;
+
+                    const availableRarities = Object.entries(rarities).filter(([key, rarity]) => gameState.level >= rarity.minLevel);
+                    if (availableRarities.length === 0) return;
+
+                    const totalWeight = availableRarities.reduce((sum, [key, rarity]) => sum + rarity.weight, 0);
+                    let random = Math.random() * totalWeight;
+                    let chosenRarityKey;
+
+                    for (const [key, rarity] of availableRarities) {
+                        random -= rarity.weight;
+                        if (random <= 0) {
+                            chosenRarityKey = key;
+                            break;
+                        }
+                    }
+                    
+                    const rarity = rarities[chosenRarityKey];
+                    const itemType = system.loot.types[Math.floor(Math.random() * system.loot.types.length)];
+                    const itemTemplates = hardwareData[itemType];
+                    const baseItem = itemTemplates[Math.floor(Math.random() * itemTemplates.length)];
+
+                    const newItem = {
+                        uniqueId: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                        baseId: baseItem.id,
+                        name: `${baseItem.name} ${rarity.name}`,
+                        icon: baseItem.icon,
+                        rarity: chosenRarityKey,
+                        rarityColor: rarity.color,
+                        bonus: {
+                            stat: baseItem.bonus.stat,
+                            value: Math.floor(baseItem.bonus.value * rarity.multiplier * (1 + (Math.random() * 0.2 - 0.1)))
+                        },
+                        specialEffect: null
+                    };
+
+                    if ((newItem.rarity === 'raro' && Math.random() < 0.5) || newItem.rarity === 'lendario') {
+                        const possibleEffects = specialEffectsPool[itemType];
+                        if (possibleEffects && possibleEffects.length > 0) {
+                            const effectTemplate = possibleEffects[Math.floor(Math.random() * possibleEffects.length)];
+                            const effectValue = effectTemplate.value();
+                            newItem.specialEffect = {
+                                type: effectTemplate.type,
+                                value: effectValue,
+                                description: effectTemplate.description(effectValue)
+                            };
+                        }
+                    }
+
+                    if (!gameState.inventory[itemType]) gameState.inventory[itemType] = [];
+                    gameState.inventory[itemType].push(newItem);
+
+                    const rect = actionPanelRef.value.getBoundingClientRect();
+                    const position = { x: rect.width / 2, y: rect.height / 2 + 30 };
+                    showFloatingText(`Hardware!`, rarity.color, position, 'fa-box-open');
                 };
                 
                 const addCreds = (amount) => {
                     gameState.creds += amount;
                     gameState.stats.totalCreds += amount;
-                    const contract = activeContract.value;
-                    if(contract && contract.type === 'collect_creds') gameState.contractProgress.collectedCreds += amount;
                 };
 
                 const levelUp = () => {
-                    while (gameState.xp >= gameState.xpToNextLevel) {
+                    while (gameState.rep >= gameState.repToNextLevel) {
                         gameState.level++;
-                        gameState.xp -= gameState.xpToNextLevel;
-                        gameState.xpToNextLevel = Math.floor(gameState.xpToNextLevel * 1.5);
+                        gameState.rep -= gameState.repToNextLevel;
+                        gameState.repToNextLevel = Math.floor(gameState.repToNextLevel * 1.5);
                         if (gameState.level % 5 === 0) gameState.skillPoints++;
                     }
                     if (actionPanelRef.value) {
@@ -753,14 +877,60 @@
                     }
                 };
                 
-                const buyEquipment = (type, id) => {
-                    // This function is now deprecated in favor of loot drops
-                };
-                
                 const equipItem = (type, uniqueId) => {
                     if (gameState.inventory[type] && gameState.inventory[type].find(i => i.uniqueId === uniqueId)) {
                         gameState.equipment[type] = uniqueId;
                     }
+                };
+
+                const sellItem = (type, uniqueId) => {
+                    const itemIndex = gameState.inventory[type].findIndex(i => i.uniqueId === uniqueId);
+                    if (itemIndex === -1 || gameState.equipment[type] === uniqueId) return;
+
+                    const item = gameState.inventory[type][itemIndex];
+                    const baseItem = hardwareData[type].find(b => b.id === item.baseId);
+                    const rarityInfo = rarities[item.rarity];
+                    
+                    if (!baseItem || !rarityInfo) return;
+
+                    const baseValue = baseItem.bonus.value * 5; // Heurística de valor
+                    const sellPrice = Math.floor(baseValue * rarityInfo.multiplier * 0.25); // Vende por 25% do valor
+
+                    addCreds(sellPrice);
+                    gameState.inventory[type].splice(itemIndex, 1);
+
+                    const rect = actionPanelRef.value.getBoundingClientRect();
+                    const position = { x: rect.width / 2, y: rect.height / 2 + 60 };
+                    showFloatingText(`+${formatNumber(sellPrice)} Creds`, 'var(--gold-color)', position, 'fa-coins');
+                };
+
+                const sellAllUnequipped = (type) => {
+                    const itemsToSell = gameState.inventory[type].filter(item => item.uniqueId !== gameState.equipment[type]);
+                    if (itemsToSell.length === 0) {
+                        showToast("Nenhum item para vender!", "fa-info-circle", "#f0a04a");
+                        return;
+                    }
+
+                    let totalSellPrice = 0;
+                    itemsToSell.forEach(item => {
+                        const baseItem = hardwareData[type].find(b => b.id === item.baseId);
+                        const rarityInfo = rarities[item.rarity];
+                        if (baseItem && rarityInfo) {
+                            const baseValue = baseItem.bonus.value * 5;
+                            totalSellPrice += Math.floor(baseValue * rarityInfo.multiplier * 0.25);
+                        }
+                    });
+
+                    addCreds(totalSellPrice);
+                    gameState.inventory[type] = gameState.inventory[type].filter(item => item.uniqueId === gameState.equipment[type]);
+
+                    const rect = actionPanelRef.value.getBoundingClientRect();
+                    const position = { x: rect.width / 2, y: rect.height / 2 + 60 };
+                    showFloatingText(`+${formatNumber(totalSellPrice)} Creds`, 'var(--gold-color)', position, 'fa-coins');
+                };
+
+                const setSort = (type, sortBy) => {
+                    inventorySort[type] = sortBy;
                 };
 
                 const buyAgent = (id) => {
@@ -779,11 +949,11 @@
                     }
                 };
 
-                const upgradeCombatSpeed = () => {
-                    const cost = getCombatSpeedUpgradeCost.value;
+                const upgradeHackSpeed = () => {
+                    const cost = getHackSpeedUpgradeCost.value;
                     if (gameState.creds >= cost) {
                         gameState.creds -= cost;
-                        gameState.combatSpeedLevel++;
+                        gameState.hackSpeedLevel++;
                     }
                 };
 
@@ -795,11 +965,11 @@
                     }
                 };
 
-                const upgradeCritDamage = () => {
-                    const cost = getCritDamageUpgradeCost.value;
+                const upgradeCritMultiplier = () => {
+                    const cost = getCritMultiplierUpgradeCost.value;
                     if (gameState.creds >= cost) {
                         gameState.creds -= cost;
-                        gameState.critDamageLevel++;
+                        gameState.critMultiplierLevel++;
                     }
                 };
 
@@ -832,7 +1002,7 @@
                     if (!skill || (gameState.skillCooldowns[id] || 0) > dayjs().valueOf()) return;
                     gameState.skillCooldowns[id] = dayjs().add(skill.cooldown, 'second').valueOf();
                     if (skill.effect.type === 'multiplier') {
-                        gameState.activeEffects.overdrive = { expiry: dayjs().add(skill.duration, 'second').valueOf() };
+                        gameState.activeEffects.overclock = { expiry: dayjs().add(skill.duration, 'second').valueOf() };
                     } else if (skill.effect.type === 'instant') {
                         addCreds(computedStats.value.credsPerSecond * skill.effect.value * computedStats.value.prestigeBonus);
                     }
@@ -846,40 +1016,38 @@
                         }
                     }
                 };
-
-                const acceptContract = (id) => {
-                    if (gameState.activeContractId) return;
-                    const contract = contractsData.find(c => c.id === id);
-                    if (!contract) return;
-                    gameState.activeContractId = id;
-                    if (contract.type === 'collect_creds') gameState.contractProgress.collectedCreds = 0;
-                };
-
-                const cancelContract = () => gameState.activeContractId = null;
-
-                const claimReward = () => {
-                    const contract = activeContract.value;
-                    if (!contract || !isContractComplete.value) return;
-                    if (contract.reward.type === 'creds') {
-                        addCreds(contract.reward.value);
-                        showToast(`+${formatNumber(contract.reward.value)} Creds!`, 'fa-file-signature');
-                    } else if (contract.reward.type === 'skillPoints') {
-                        gameState.skillPoints += contract.reward.value;
-                        showToast(`+${formatNumber(contract.reward.value)} PH!`, 'fa-file-signature');
-                    }
-                    gameState.completedContractIds.push(contract.id);
-                    gameState.activeContractId = null;
-                };
                 
                 const isAchievementCompleted = (id) => gameState.completedAchievementIds.includes(id);
+
+                const getAchievementProgress = (achievement) => {
+                    if (isAchievementCompleted(achievement.id)) return 'Concluído!';
+                    let current = 0;
+                    switch (achievement.type) {
+                        case 'clicks': current = gameState.stats.totalClicks; break;
+                        case 'level': current = gameState.level; break;
+                        case 'totalCreds': current = gameState.stats.totalCreds; break;
+                        case 'hackSystem': current = gameState.stats.systemsHacked[achievement.target] || 0; return `${formatNumber(current)} / ${formatNumber(achievement.count)}`;
+                        case 'hardwareCount': current = Object.values(gameState.inventory).flat().length; break;
+                        case 'hardwareRarity': current = Object.values(gameState.inventory).flat().filter(i => i.rarity === achievement.target).length; return `${formatNumber(current)} / ${formatNumber(achievement.count)}`;
+                        case 'prestige': current = gameState.stats.prestigeCount; break;
+                    }
+                    return `${formatNumber(current)} / ${formatNumber(achievement.target)}`;
+                };
 
                 const checkAchievements = () => {
                     achievementsData.forEach(ach => {
                         if (isAchievementCompleted(ach.id)) return;
                         let completed = false;
-                        if (ach.type === 'clicks' && gameState.stats.totalClicks >= ach.target) completed = true;
-                        else if (ach.type === 'level' && gameState.level >= ach.target) completed = true;
-                        else if (ach.type === 'totalCreds' && gameState.stats.totalCreds >= ach.target) completed = true;
+                        switch (ach.type) {
+                            case 'clicks': if (gameState.stats.totalClicks >= ach.target) completed = true; break;
+                            case 'level': if (gameState.level >= ach.target) completed = true; break;
+                            case 'totalCreds': if (gameState.stats.totalCreds >= ach.target) completed = true; break;
+                            case 'hackSystem': if ((gameState.stats.systemsHacked[ach.target] || 0) >= ach.count) completed = true; break;
+                            case 'hardwareCount': if (Object.values(gameState.inventory).flat().length >= ach.target) completed = true; break;
+                            case 'hardwareRarity': if (Object.values(gameState.inventory).flat().filter(i => i.rarity === ach.target).length >= ach.count) completed = true; break;
+                            case 'prestige': if (gameState.stats.prestigeCount >= ach.target) completed = true; break;
+                        }
+                        
                         if (completed) {
                             gameState.completedAchievementIds.push(ach.id);
                             showToast(`Conquista: ${ach.name}`, 'fa-trophy', 'var(--achievement-color)');
@@ -914,7 +1082,7 @@
                     setTimeout(() => { toast.show = false; }, 3000);
                 };
 
-                const SAVE_KEY = 'cyberpunkRPGSave_vue';
+                const SAVE_KEY = 'cyberpunkNetrunnerSave_v8';
                 const saveGame = (manual = false) => {
                     gameState.lastSaveTimestamp = dayjs().valueOf();
                     localStorage.setItem(SAVE_KEY, JSON.stringify(gameState));
@@ -926,6 +1094,13 @@
                     if (savedData) {
                         try {
                             const loadedState = JSON.parse(savedData);
+                            
+                            if (!loadedState.version || loadedState.version < 8) {
+                                console.warn("Save file from an older version detected. Resetting for compatibility.");
+                                resetGame();
+                                return;
+                            }
+
                             const newState = JSON.parse(JSON.stringify(defaultGameState()));
                             const mergeDeep = (target, source) => {
                                 for (const key in source) {
@@ -957,13 +1132,13 @@
                             localStorage.removeItem(SAVE_KEY);
                         }
                     }
-                    gameState.health = computedStats.value.maxHealth;
+                    gameState.traceLevel = 0;
                 };
                 
                 const resetGame = () => {
                     localStorage.removeItem(SAVE_KEY);
                     Object.assign(gameState, defaultGameState());
-                    gameState.health = computedStats.value.maxHealth;
+                    gameState.traceLevel = 0;
                 };
 
                 const prestigeReset = () => {
@@ -971,45 +1146,50 @@
                     const currentPrestige = gameState.prestigePoints;
                     const pointsGained = prestigePointsToGain.value;
                     const completedAchievements = [...gameState.completedAchievementIds];
+                    const currentPrestigeCount = gameState.stats.prestigeCount || 0;
+
                     const newState = defaultGameState();
                     newState.prestigePoints = currentPrestige + pointsGained;
                     newState.completedAchievementIds = completedAchievements;
+                    newState.stats.prestigeCount = currentPrestigeCount + 1;
+
                     Object.assign(gameState, newState);
-                    gameState.health = computedStats.value.maxHealth;
+                    gameState.traceLevel = 0;
                     saveGame();
+                    checkAchievements(); // Check for prestige achievement
                 };
 
-                const selectEnemy = (enemyId) => {
-                    gameState.currentEnemyId = enemyId;
-                    combatProgress.value = 0;
+                const selectSystem = (systemId) => {
+                    gameState.currentTargetSystemId = systemId;
+                    hackProgress.value = 0;
                     closeView();
                 };
 
                 const triggerRandomEvent = () => {
                     if (activeEvent.value) return;
-                    const randomIndex = Math.floor(Math.random() * eventData.length);
-                    const newEvent = eventData[randomIndex];
-                    gameState.activeEventId = newEvent.id;
-                    gameState.eventEndTime = dayjs().add(newEvent.duration, 'second').valueOf();
+                    if(Math.random() < 0.25) { // 25% chance to trigger
+                        const randomIndex = Math.floor(Math.random() * eventData.length);
+                        const newEvent = eventData[randomIndex];
+                        gameState.activeEventId = newEvent.id;
+                        gameState.eventEndTime = dayjs().add(newEvent.duration, 'second').valueOf();
+                    }
                 };
 
                 let gameLoopInterval, saveInterval, cooldownInterval, eventInterval;
 
                 onMounted(() => {
                     loadGame();
-                    const GAME_TICK_RATE = 100; // ms
+                    const GAME_TICK_RATE = 100;
                     gameLoopInterval = setInterval(() => {
-                        if (isPlayerDefeated.value) return;
-                        // Agent CPS
+                        if (isPlayerDisconnected.value) return;
                         addCreds((computedStats.value.credsPerSecond * computedStats.value.prestigeBonus) / (1000 / GAME_TICK_RATE));
                         
-                        // Combat Cycle Progress
                         if (Date.now() - gameState.lastClickTimestamp > 2000) {
                             gameState.comboCount = 0;
                         }
-                        combatProgress.value += (100 / (5000 / GAME_TICK_RATE)) * computedStats.value.combatSpeed; // 5 seconds base cycle
-                        if (combatProgress.value >= 100) {
-                            resolveCombat();
+                        hackProgress.value += (100 / (5000 / GAME_TICK_RATE)) * computedStats.value.hackSpeed;
+                        if (hackProgress.value >= 100) {
+                            resolveHack();
                         }
 
                         checkActiveEffects();
@@ -1025,11 +1205,11 @@
                         }
                     }, 1000);
 
-                    eventInterval = setInterval(triggerRandomEvent, 5 * 60 * 1000); // Chance for event every 5 minutes
+                    eventInterval = setInterval(triggerRandomEvent, 2 * 60 * 1000); // Chance for event every 2 minutes
                 });
 
-                watch(() => gameState.attributes.vigor, () => {
-                    gameState.health = computedStats.value.maxHealth;
+                watch(() => gameState.attributes.ofuscacao, () => {
+                    gameState.traceLevel = Math.min(gameState.traceLevel, computedStats.value.maxTrace);
                 });
 
                 onUnmounted(() => {
@@ -1041,26 +1221,30 @@
 
                 return {
                     // State
-                    gameState, equipmentData, agentsData, skillsData, contractsData, achievementsData,
-                    activeView, isMenuOpen, shopTabs, floatingTexts, actionPanelRef, toast,
+                    gameState, hardwareData, agentsData, skillsData, achievementsData,
+                    activeView, isMenuOpen, menuTabs, floatingTexts, actionPanelRef, toast,
                     showOfflineModal, offlineGains,
                     showConfirmModal, confirmTitle, confirmMessage,
-                    combatProgress, isPlayerDefeated, playerDefeatedTimer,
+                    hackProgress, isPlayerDisconnected: isPlayerDisconnected, playerDisconnectedTimer: playerDisconnectedTimer,
                     activeEvent, activeEventTimer,
+                    inventorySort,
                     // Computed
-                    computedStats, currentEnemy, prestigePointsToGain, activeSkills,
-                    skillTree, activeContract, contractProgress, isContractComplete, availableContracts,
-                    isAchievementCompleted, currentViewName, currentViewIcon, getCombatSpeedUpgradeCost,
-                    getCritChanceUpgradeCost, getCritDamageUpgradeCost, getComboDurationUpgradeCost,
+                    computedStats, currentTargetSystem, prestigePointsToGain, activeSkills,
+                    skillTree,
+                    isAchievementCompleted,
+                    sortedInventory,
+                    currentViewName, currentViewIcon,
+                    getHackSpeedUpgradeCost, getCritChanceUpgradeCost, getCritMultiplierUpgradeCost, getComboDurationUpgradeCost,
                     // Methods
                     formatNumber, getItem, getAgentCost, getTrainCost,
-                    manualClick, buyEquipment, equipItem, buyAgent, trainAttribute, buySkill, activateSkill,
-                    acceptContract, cancelContract, claimReward,
-                    saveGame, resetGame, prestigeReset, selectEnemy,
+                    manualClick, equipItem, sellItem, sellAllUnequipped, setSort,
+                    buyAgent, trainAttribute, buySkill, activateSkill,
+                    saveGame, resetGame, prestigeReset, selectSystem,
                     askForConfirmation, handleConfirm, cancelConfirm,
-                    toggleMenu, openView, closeView, upgradeCombatSpeed, upgradeCritChance, upgradeCritDamage, upgradeComboDuration,
+                    toggleMenu, openView, closeView, upgradeHackSpeed, upgradeCritChance, upgradeCritMultiplier, upgradeComboDuration,
+                    getAchievementProgress,
                     PRESTIGE_LEVEL_REQ,
-                    enemyData
+                    systemData
                 };
             }
         }
@@ -1070,5 +1254,3 @@
     </script>
 </body>
 </html>
-" in the canvas.
-I want to implement the loot and rare items id
