@@ -393,12 +393,12 @@
                 };
 
                 const hardwareData = {
-                    deck: [ { id: 'd1', name: 'Deck Básico', icon: 'fa-microchip', bonus: { stat: 'processamento', value: 2 } }, { id: 'd2', name: 'Deck Militar', icon: 'fa-server', bonus: { stat: 'processamento', value: 10 } }, { id: 'd3', name: 'Deck Quântico', icon: 'fa-atom', bonus: { stat: 'processamento', value: 40 } } ],
-                    software: [ { id: 's1', name: 'Proxy Simples', icon: 'fa-mask', bonus: { stat: 'ofuscacao', value: 3 } }, { id: 's2', name: 'Software de Camuflagem', icon: 'fa-user-secret', bonus: { stat: 'ofuscacao', value: 15 } }, { id: 's3', name: 'Firewall Pessoal', icon: 'fa-shield-halved', bonus: { stat: 'ofuscacao', value: 60 } } ],
-                    implante: [ { id: 'i1', name: 'Implante de Reflexo', icon: 'fa-bolt', bonus: { stat: 'agilidade', value: 5 } }, { id: 'i2', name: 'Co-processador Craniano', icon: 'fa-brain', bonus: { stat: 'processamento', value: 8 } }, { id: 'i3', name: 'Link Neural Avançado', icon: 'fa-wifi', bonus: { stat: 'agilidade', value: 25 } } ]
+                    deck: [ { id: 'd1', name: 'Deck Básico', icon: 'fa-microchip', bonus: { stat: 'processamento', value: 2 } }, { id: 'd2', name: 'Deck Militar', icon: 'fa-server', bonus: { stat: 'processamento', value: 10 } }, { id: 'd3', name: 'Deck Quântico', icon: 'fa-atom', bonus: { stat: 'processamento', value: 40 } }, { id: 'd4', name: 'Deck de I.A.', icon: 'fa-brain', bonus: { stat: 'processamento', value: 120 } }, { id: 'd5', name: 'Deck Experimental', icon: 'fa-flask-vial', bonus: { stat: 'processamento', value: 300 } } ],
+                    software: [ { id: 's1', name: 'Proxy Simples', icon: 'fa-mask', bonus: { stat: 'ofuscacao', value: 3 } }, { id: 's2', name: 'Software de Camuflagem', icon: 'fa-user-secret', bonus: { stat: 'ofuscacao', value: 15 } }, { id: 's3', name: 'Firewall Pessoal', icon: 'fa-shield-halved', bonus: { stat: 'ofuscacao', value: 60 } }, { id: 's4', name: 'Criptografia Militar', icon: 'fa-file-shield', bonus: { stat: 'ofuscacao', value: 150 } }, { id: 's5', name: 'Gerador de Ruído Branco', icon: 'fa-wave-square', bonus: { stat: 'ofuscacao', value: 400 } } ],
+                    implante: [ { id: 'i1', name: 'Implante de Reflexo', icon: 'fa-bolt', bonus: { stat: 'agilidade', value: 5 } }, { id: 'i2', name: 'Co-processador Craniano', icon: 'fa-brain', bonus: { stat: 'processamento', value: 8 } }, { id: 'i3', name: 'Link Neural Avançado', icon: 'fa-wifi', bonus: { stat: 'agilidade', value: 25 } }, { id: 'i4', name: 'Fiação Sináptica', icon: 'fa-network-wired', bonus: { stat: 'agilidade', value: 70 } }, { id: 'i5', name: 'Processador Quântico', icon: 'fa-atom', bonus: { stat: 'processamento', value: 100 } } ]
                 };
 
-                const agentsData = [ { id: 'ag1', name: 'Script de Mineração', cost: 1000, icon: 'fa-scroll', cps: 0.5 }, { id: 'ag2', name: 'Bot de Trading', cost: 5000, icon: 'fa-chart-line', cps: 3 }, { id: 'ag3', name: 'IA de Investimento', cost: 25000, icon: 'fa-brain', cps: 15 } ];
+                const agentsData = [ { id: 'ag1', name: 'Script de Mineração', cost: 1000, icon: 'fa-scroll', cps: 0.5 }, { id: 'ag2', name: 'Bot de Trading', cost: 5000, icon: 'fa-chart-line', cps: 3 }, { id: 'ag3', name: 'IA de Investimento', cost: 25000, icon: 'fa-brain', cps: 15 }, { id: 'ag4', name: 'Data Worm', cost: 100000, icon: 'fa-worm', cps: 75 }, { id: 'ag5', name: 'IA Rogue', cost: 500000, icon: 'fa-skull-crossbones', cps: 400 } ];
                 
                 const systemData = reactive([ 
                     { id: 'sys1', level: 1, name: 'Firewall Corporativo', icon: 'fa-shield-virus', color: '#f04a4a', encryption: 5, processingPower: 2, reward: { rep: 10, creds: 5 }, loot: { dropChance: 0.15, types: ['software', 'deck'] } }, 
@@ -406,7 +406,10 @@
                     { id: 'sys3', level: 10, name: 'Nó de Rede Segura', icon: 'fa-network-wired', color: '#e0e0e0', encryption: 100, processingPower: 40, reward: { rep: 200, creds: 100 }, loot: { dropChance: 0.25, types: ['deck', 'software', 'implante'] } }, 
                     { id: 'sys4', level: 20, name: 'IA de Segurança', icon: 'fa-robot', color: '#ff00ff', encryption: 400, processingPower: 100, reward: { rep: 750, creds: 400 }, loot: { dropChance: 0.30, types: ['implante', 'deck'] } },
                     { id: 'sys5', level: 30, name: 'Consciência Digital', icon: 'fa-ghost', color: '#9d4edd', encryption: 1500, processingPower: 250, reward: { rep: 3000, creds: 1500 }, loot: { dropChance: 0.35, types: ['deck', 'implante', 'software'] } },
-                    { id: 'sys6', level: 40, name: 'O Arasaka Mainframe', icon: 'fa-building-shield', color: '#ff5c5c', encryption: 6000, processingPower: 500, reward: { rep: 10000, creds: 5000 }, loot: { dropChance: 0.4, types: ['deck', 'software', 'implante'] } }
+                    { id: 'sys6', level: 40, name: 'O Arasaka Mainframe', icon: 'fa-building-shield', color: '#ff5c5c', encryption: 6000, processingPower: 500, reward: { rep: 10000, creds: 5000 }, loot: { dropChance: 0.4, types: ['deck', 'software', 'implante'] } },
+                    { id: 'sys7', level: 50, name: 'Satélite Orbital', icon: 'fa-satellite', color: '#00aaff', encryption: 25000, processingPower: 1200, reward: { rep: 40000, creds: 20000 }, loot: { dropChance: 0.45, types: ['deck', 'implante'] } },
+                    { id: 'sys8', level: 60, name: 'Banco de Dados da IA', icon: 'fa-database', color: '#39ff14', encryption: 100000, processingPower: 4000, reward: { rep: 150000, creds: 75000 }, loot: { dropChance: 0.5, types: ['software', 'implante'] } },
+                    { id: 'sys9', level: 80, name: 'Núcleo da Net Babilônia', icon: 'fa-dungeon', color: '#f77fbe', encryption: 500000, processingPower: 15000, reward: { rep: 1000000, creds: 500000 }, loot: { dropChance: 0.6, types: ['deck', 'software', 'implante'] } }
                 ]);
 
                 const skillsData = {
@@ -425,6 +428,12 @@
                     { id: 'ach8', name: 'Colecionador', description: 'Colete 10 peças de hardware', type: 'hardwareCount', target: 10, bonus: { stat: 'repMultiplier', value: 0.10, description: '+10% REP' } },
                     { id: 'ach9', name: 'Arsenal Lendário', description: 'Colete 1 peça de hardware Lendária', type: 'hardwareRarity', target: 'lendario', count: 1, bonus: { stat: 'invasionPowerMultiplier', value: 0.10, description: '+10% Poder de Invasão' } },
                     { id: 'ach10', name: 'Primeiro Prestígio', description: 'Realize o prestígio pela primeira vez', type: 'prestige', target: 1, bonus: { stat: 'globalMultiplier', value: 0.15, description: '+15% Creds e REP' } },
+                    { id: 'ach11', name: 'Lenda da Net', description: 'Alcance o nível 50', type: 'level', target: 50, bonus: { stat: 'repMultiplier', value: 0.10, description: '+10% REP' } },
+                    { id: 'ach12', name: 'Mestre dos Sistemas', description: 'Invada o Núcleo da Net Babilônia', type: 'hackSystem', target: 'sys9', count: 1, bonus: { stat: 'invasionPowerMultiplier', value: 0.15, description: '+15% Poder de Invasão' } },
+                    { id: 'ach13', name: 'Bilionário', description: 'Acumule 1.000.000.000 Creds', type: 'totalCreds', target: 1000000000, bonus: { stat: 'globalMultiplier', value: 0.20, description: '+20% Creds' } },
+                    { id: 'ach14', name: 'Mestre do Prestígio', description: 'Realize o prestígio 5 vezes', type: 'prestige', target: 5, bonus: { stat: 'globalMultiplier', value: 0.25, description: '+25% Creds e REP' } },
+                    { id: 'ach15', name: 'Frenesi de Cliques', description: 'Execute 10.000 ciclos de invasão', type: 'clicks', target: 10000, bonus: { stat: 'globalMultiplier', value: 0.05, description: '+5% Creds' } },
+                    { id: 'ach16', name: 'Colecionador Mestre', description: 'Colete 50 peças de hardware', type: 'hardwareCount', target: 50, bonus: { stat: 'lootChanceBonus', value: 0.05, description: '+5% Chance de Loot' } }
                 ];
 
                 const eventData = [
@@ -525,11 +534,11 @@
                 });
 
                 const achievementBonus = computed(() => {
-                    const bonuses = { globalMultiplier: 1, repMultiplier: 1, invasionPowerMultiplier: 1 };
+                    const bonuses = { globalMultiplier: 1, repMultiplier: 1, invasionPowerMultiplier: 1, lootChanceBonus: 0 };
                     gameState.completedAchievementIds.forEach(id => {
                         const achievement = achievementsData.find(a => a.id === id);
                         if (achievement) {
-                            bonuses[achievement.bonus.stat] = (bonuses[achievement.bonus.stat] || 1) + achievement.bonus.value;
+                            bonuses[achievement.bonus.stat] = (bonuses[achievement.bonus.stat] || (achievement.bonus.stat.includes("Bonus") ? 0 : 1)) + achievement.bonus.value;
                         }
                     });
                     return bonuses;
@@ -603,7 +612,7 @@
                         achievementBonus: achBonus.globalMultiplier,
                         hackSpeed: ((1 + (gameState.hackSpeedLevel - 1) * 0.1) * eventBonus.hackSpeed),
                         comboRounds: 5 + (gameState.comboDurationLevel - 1),
-                        lootChanceBonus: specialBonuses.lootChanceBonus,
+                        lootChanceBonus: specialBonuses.lootChanceBonus + achBonus.lootChanceBonus,
                         traceResist: specialBonuses.traceResist
                     };
                 });
